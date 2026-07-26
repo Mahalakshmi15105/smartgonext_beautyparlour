@@ -1,0 +1,101 @@
+import os
+import logging
+from flask import Flask
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from werkzeug.exceptions import HTTPException
+
+from app.config import Config
+from app.database import db, migrate
+from app.utils.responses import error_response
+import app.models
+
+# Configure root logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+)
+
+def create_app(config_class=Config):
+    app = Flask(__name__)
+    app.config.from_object(config_class)
+
+    # Initialize extensions
+    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
+    db.init_app(app)
+    migrate.init_app(app, db)
+    
+    # Initialize JWT
+    jwt = JWTManager(app)
+
+    # Register blueprints
+    from app.routes.health import health_bp
+    from app.routes.auth import auth_bp
+    from app.routes.customers import customers_bp
+    from app.routes.employees import employees_bp
+    from app.routes.services import services_bp
+    from app.routes.products import products_bp
+    from app.routes.billing import billing_bp
+    from app.routes.memberships import memberships_bp
+    from app.routes.dashboard import dashboard_bp
+    from app.routes.reports import reports_bp
+    from app.routes.settings import settings_bp
+    from app.routes.super_admin import super_admin_bp
+    app.register_blueprint(health_bp, url_prefix="/api/v1")
+    app.register_blueprint(auth_bp, url_prefix="/api/v1")
+    app.register_blueprint(customers_bp, url_prefix="/api/v1")
+    app.register_blueprint(employees_bp, url_prefix="/api/v1")
+    app.register_blueprint(services_bp, url_prefix="/api/v1")
+    app.register_blueprint(products_bp, url_prefix="/api/v1")
+    app.register_blueprint(billing_bp, url_prefix="/api/v1")
+    app.register_blueprint(memberships_bp, url_prefix="/api/v1")
+    app.register_blueprint(dashboard_bp, url_prefix="/api/v1")
+    app.register_blueprint(reports_bp, url_prefix="/api/v1")
+    app.register_blueprint(settings_bp, url_prefix="/api/v1")
+    app.register_blueprint(super_admin_bp, url_prefix="/api/v1")
+
+    # Global JWT Custom Error Handlers
+    @jwt.unauthorized_loader
+    def unauthorized_callback(err_str):
+        return error_response(
+            error_code="UNAUTHORIZED",
+            message=err_str,
+            status_code=401
+        )
+
+    @jwt.expired_token_loader
+    def expired_token_callback(jwt_header, jwt_payload):
+        return error_response(
+            error_code="TOKEN_EXPIRED",
+            message="The provided authorization token has expired.",
+            status_code=401
+        )
+
+    @jwt.invalid_token_loader
+    def invalid_token_callback(err_str):
+        return error_response(
+            error_code="INVALID_TOKEN",
+            message=err_str,
+            status_code=401
+        )
+
+    # Centralized HTTP Exception Handler
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        # Pass HTTPExceptions through
+        if isinstance(e, HTTPException):
+            return error_response(
+                error_code=e.name.upper().replace(" ", "_"),
+                message=e.description,
+                status_code=e.code
+            )
+        
+        # Log unhandled exceptions
+        app.logger.error(f"Unhandled Exception: {str(e)}", exc_info=True)
+        return error_response(
+            error_code="INTERNAL_SERVER_ERROR",
+            message="An unexpected server error occurred.",
+            status_code=500
+        )
+
+    return app

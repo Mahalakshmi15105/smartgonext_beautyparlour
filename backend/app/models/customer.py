@@ -1,0 +1,20 @@
+from app.database import db
+from app.models.mixins import TimestampMixin, SoftDeleteMixin
+
+class Customer(db.Model, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "customers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    first_name = db.Column(db.String(100), nullable=False)
+    last_name = db.Column(db.String(100), nullable=True)
+    phone = db.Column(db.String(30), nullable=False, index=True)
+    email = db.Column(db.String(120), nullable=True, index=True)
+    gender = db.Column(db.String(20), nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    address = db.Column(db.Text, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    # Relationships
+    memberships = db.relationship("CustomerMembership", back_populates="customer", cascade="all, delete-orphan")
+    invoices = db.relationship("Invoice", back_populates="customer")

@@ -1,0 +1,53 @@
+from app.database import db
+from app.models.mixins import TimestampMixin
+
+class Invoice(db.Model, TimestampMixin):
+    __tablename__ = "invoices"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    invoice_number = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    subtotal = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    discount = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    tax = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    total = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    status = db.Column(db.String(50), nullable=False, default="Paid")  # Paid, Partial, Voided
+
+    # Relationships
+    customer = db.relationship("Customer", back_populates="invoices")
+    line_items = db.relationship("InvoiceLineItem", back_populates="invoice", cascade="all, delete-orphan")
+    payments = db.relationship("InvoicePayment", back_populates="invoice", cascade="all, delete-orphan")
+
+
+class InvoiceLineItem(db.Model, TimestampMixin):
+    __tablename__ = "invoice_line_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoices.id"), nullable=False, index=True)
+    service_id = db.Column(db.Integer, db.ForeignKey("services.id"), nullable=True, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True, index=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey("employees.id"), nullable=False, index=True)
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    discount_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    tax_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+    line_total = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+
+    # Relationships
+    invoice = db.relationship("Invoice", back_populates="line_items")
+    employee = db.relationship("Employee", back_populates="line_items")
+
+
+class InvoicePayment(db.Model, TimestampMixin):
+    __tablename__ = "invoice_payments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoices.id"), nullable=False, index=True)
+    method = db.Column(db.String(50), nullable=False)  # cash, card, online
+    amount = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
+
+    # Relationships
+    invoice = db.relationship("Invoice", back_populates="payments")
