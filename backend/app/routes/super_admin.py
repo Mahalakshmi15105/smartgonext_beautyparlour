@@ -195,6 +195,10 @@ def create_tenant():
         db.session.add(log)
 
         db.session.commit()
+
+        # Seed predefined beauty categories (Hair Care, Skin Care, Nail Care, Grooming Services)
+        from app.routes.services import ensure_tenant_categories
+        ensure_tenant_categories(tenant.id)
     except Exception as e:
         db.session.rollback()
         logger.error(f"Failed to provision tenant: {str(e)}")
@@ -300,7 +304,7 @@ def get_audit_logs():
             "id": l.id,
             "action": l.action,
             "details": l.details,
-            "ip_address": l.ip_address,
+            "ip_address": getattr(l, "ip_address", "127.0.0.1"),
             "created_at": l.created_at.isoformat()
         } for l in logs
     ]

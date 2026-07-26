@@ -1,71 +1,62 @@
 @import "tailwindcss";
 
+@theme {
+  --color-primary: #EC4899;
+  --color-primary-hover: #DB2777;
+  --color-primary-light: #FDF2F8;
+  
+  --color-gold-accent: #D4AF37;
+  --color-gold-light: #FEF3C7;
+
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #F43F5E;
+  
+  --color-background: #FDFBFD;
+  --color-surface: #FFFFFF;
+  
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  
+  --color-border-soft: #FCE7F3;
+}
+
+:root {
+  --color-primary: #EC4899;
+  --color-primary-hover: #DB2777;
+  --color-primary-light: #FDF2F8;
+  --color-background: #FDFBFD;
+  --color-surface: #FFFFFF;
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #64748B;
+  --color-border-soft: #FCE7F3;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #F43F5E;
+}
+
+/* Explicit Rose Pink Design System Utilities */
+.bg-primary { background-color: #EC4899 !important; }
+.text-primary { color: #EC4899 !important; }
+.border-primary { border-color: #EC4899 !important; }
+
+.bg-primary-hover:hover, .hover\:bg-primary-hover:hover { background-color: #DB2777 !important; }
+.bg-primary-light, .hover\:bg-primary-light:hover { background-color: #FDF2F8 !important; }
+
+.bg-background { background-color: #FDFBFD !important; }
+.bg-surface { background-color: #FFFFFF !important; }
+
+.text-text-primary { color: #0F172A !important; }
+.text-text-secondary { color: #64748B !important; }
+.border-border-soft { border-color: #FCE7F3 !important; }
+
 @layer base {
-  :root {
-    /* Rose Pink Beauty Parlour SaaS Design System Tokens */
-    --color-primary: hsl(330, 81%, 60%);         /* #EC4899 Rose Pink */
-    --color-primary-hover: hsl(330, 70%, 50%);   /* #DB2777 Deep Rose */
-    --color-primary-light: hsl(330, 85%, 96%);   /* #FDF2F8 Rose Light */
-    
-    --color-gold-accent: hsl(43, 65%, 52%);       /* #D4AF37 Soft Gold */
-    --color-gold-light: hsl(43, 90%, 96%);        /* Soft Gold Tint */
-
-    --color-success: hsl(142, 70%, 45%);         /* #10B981 */
-    --color-warning: hsl(37, 90%, 50%);          /* #F59E0B */
-    --color-danger: hsl(346, 84%, 61%);          /* #F43F5E */
-    
-    --color-background: hsl(330, 30%, 99%);      /* #FDFBFD Soft Rose Tint */
-    --color-surface: hsl(0, 0%, 100%);           /* #FFFFFF */
-    
-    --color-text-primary: hsl(222, 47%, 11%);     /* #0F172A Dark Charcoal */
-    --color-text-secondary: hsl(215, 16%, 47%);   /* #64748B */
-    
-    --color-border-soft: hsl(330, 30%, 93%);     /* #FCE7F3 Soft Rose Border */
-  }
-
   body {
-    background-color: var(--color-background);
-    color: var(--color-text-primary);
+    background-color: #FDFBFD;
+    color: #0F172A;
     font-family: "Inter", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     margin: 0;
     padding: 0;
   }
-}
-
-/* Custom Rose Pink Theme Utility Classes */
-.btn-primary {
-  background-color: var(--color-primary);
-  color: #ffffff;
-  font-weight: 600;
-  border-radius: 0.75rem;
-  transition: all 0.2s ease-in-out;
-}
-
-.btn-primary:hover {
-  background-color: var(--color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(236, 72, 153, 0.25);
-}
-
-.btn-secondary {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-soft);
-  color: var(--color-text-primary);
-  font-weight: 600;
-  border-radius: 0.75rem;
-  transition: all 0.2s ease-in-out;
-}
-
-.btn-secondary:hover {
-  background-color: var(--color-primary-light);
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-}
-
-.card-theme {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-border-soft);
-  border-radius: 1rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }

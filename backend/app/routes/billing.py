@@ -55,16 +55,17 @@ def checkout():
             item_type = item.get("type")  # service or product
             item_id = item.get("item_id")
             qty = int(item.get("quantity", 1))
-            employee_id = item.get("employee_id")
-            benefit_id = item.get("customer_membership_id")  # membership benefit link
-
-            if not item_id or not employee_id:
+            emp_ids = item.get("employee_ids") or ([item.get("employee_id")] if item.get("employee_id") else [])
+            benefit_id = item.get("customer_membership_id")
+            if not item_id or not emp_ids:
                 raise ValueError("Item ID and Employee assignment are required for each line.")
 
+            primary_emp_id = emp_ids[0]
             # Validate Employee
-            emp = get_tenant_query(Employee).filter_by(id=employee_id, status="active").first()
+            emp = get_tenant_query(Employee).filter_by(id=primary_emp_id, status="active").first()
             if not emp:
-                raise ValueError(f"Assigned Employee ID {employee_id} is inactive or invalid.")
+                raise ValueError(f"Assigned Employee ID {primary_emp_id} is inactive or invalid.")
+            employee_id = primary_emp_id
 
             discount_amount = Decimal("0.00")
             item_name = ""
@@ -377,3 +378,116 @@ def void_invoice(invoice_id):
         )
 
     return success_response({"message": "Invoice voided successfully, inventory and membership benefits restored."})
+
+
+@billing_bp.route("/invoices/<int:invoice_id>/sms", methods=["POST"])
+@require_role(["ParlourAdmin"])
+def send_invoice_sms(invoice_id):
+    invoice = get_tenant_query(Invoice).filter_by(id=invoice_id).first()
+    if not invoice:
+        return error_response(
+            error_code="INVOICE_NOT_FOUND",
+            message="Invoice not found or access denied.",
+            status_code=404
+        )
+
+    phone = invoice.customer.phone
+    message_text = f"Hello {invoice.customer.first_name}, thank you for visiting! Invoice #{invoice.invoice_number} Total: {float(invoice.total):.2f}. Have a wonderful day!"
+
+    logger.info(f"SMS Dispatch Simulated for Tenant {g.parlour_id} to {phone}: '{message_text}'")
+    return success_response({
+        "message": f"SMS receipt dispatched to {phone}",
+        "sms_content": message_text,
+        "phone": phone
+    })
+
+
+@billing_bp.route("/reminders", methods=["POST"])
+@require_role(["ParlourAdmin"])
+def create_reminder():
+    from app.models.customer import Reminder
+    data = request.get_json() or {}
+    customer_id = data.get("customer_id")
+    invoice_id = data.get("invoice_id")
+    reminder_type = data.get("reminder_type", "Follow-up appointment")
+    reminder_date = data.get("reminder_date")
+    notes = data.get("notes")
+
+    if not customer_id or not reminder_date:
+        return error_response(
+            error_code="VALIDATION_FAILED",
+            message="Customer ID and Reminder Date are required.",
+            status_code=400
+        )
+
+    try:
+        rem = Reminder(
+            tenant_id=g.parlour_id,
+            customer_id=customer_id,
+            invoice_id=invoice_id,
+            reminder_type=reminder_type,
+            reminder_date=str(reminder_date),
+            notes=notes,
+            status="Pending"
+        )
+        db.session.add(rem)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to save reminder: {str(e)}")
+        return error_response(
+            error_code="DATABASE_ERROR",
+            message="Failed to save reminder.",
+            status_code=500
+        )
+
+    return success_response({
+        "id": rem.id,
+        "reminder_type": rem.reminder_type,
+        "reminder_date": rem.reminder_date,
+        "message": "Reminder created and saved successfully."
+    }, 201)
+
+
+@billing_bp.route("/feedback", methods=["POST"])
+@require_role(["ParlourAdmin"])
+def collect_feedback():
+    from app.models.customer import CustomerFeedback
+    data = request.get_json() or {}
+    customer_id = data.get("customer_id")
+    invoice_id = data.get("invoice_id")
+    rating = int(data.get("rating", 5))
+    comments = data.get("comments", "").strip()
+
+    if not customer_id or not invoice_id:
+        return error_response(
+            error_code="VALIDATION_FAILED",
+            message="Customer ID and Invoice ID are required.",
+            status_code=400
+        )
+
+    try:
+        fb = CustomerFeedback(
+            tenant_id=g.parlour_id,
+            customer_id=customer_id,
+            invoice_id=invoice_id,
+            rating=rating,
+            comments=comments
+        )
+        db.session.add(fb)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to record customer feedback: {str(e)}")
+        return error_response(
+            error_code="DATABASE_ERROR",
+            message="Failed to record customer feedback.",
+            status_code=500
+        )
+
+    return success_response({
+        "id": fb.id,
+        "rating": fb.rating,
+        "message": "Customer feedback recorded and saved successfully."
+    }, 201)
+

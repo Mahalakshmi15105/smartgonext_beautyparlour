@@ -6,15 +6,79 @@ from app.utils.auth import require_role, get_tenant_query
 from app.utils.query import paginate_query
 import logging
 
+from app.models.global_models import Tenant
+
 logger = logging.getLogger(__name__)
 services_bp = Blueprint("services", __name__)
+
+PREDEFINED_CATEGORIES = ["Hair Care", "Skin Care", "Nail Care", "Grooming Services"]
+
+DEFAULT_CATEGORY_SERVICES = {
+    "Hair Care": [
+        {"name": "Hair Cut & Styling", "price": 499.00, "duration": 45},
+        {"name": "Hair Spa & Nourishing", "price": 999.00, "duration": 60},
+        {"name": "Hair Smoothening Treatment", "price": 2499.00, "duration": 120}
+    ],
+    "Skin Care": [
+        {"name": "Glow Facial Treatment", "price": 1299.00, "duration": 60},
+        {"name": "Deep Clean-Up", "price": 699.00, "duration": 30},
+        {"name": "De-Tan & Bleach Pack", "price": 499.00, "duration": 30}
+    ],
+    "Nail Care": [
+        {"name": "Deluxe Manicure & Pedicure", "price": 899.00, "duration": 60},
+        {"name": "Nail Art & Gel Polish", "price": 599.00, "duration": 45}
+    ],
+    "Grooming Services": [
+        {"name": "Beard Styling & Trim", "price": 299.00, "duration": 20},
+        {"name": "Full Face Threading & Waxing", "price": 399.00, "duration": 30}
+    ]
+}
+
+def ensure_tenant_categories(tenant_id):
+    if not tenant_id:
+        return
+    try:
+        tenant = Tenant.query.get(tenant_id)
+        if not tenant:
+            return
+        added = False
+        for cat_name in PREDEFINED_CATEGORIES:
+            cat = ServiceCategory.query.filter_by(tenant_id=tenant_id, name=cat_name, is_deleted=False).first()
+            if not cat:
+                cat = ServiceCategory(tenant_id=tenant_id, name=cat_name, is_deleted=False)
+                db.session.add(cat)
+                db.session.flush()
+                added = True
+            
+            # Check if category has default starter services
+            existing_svcs = Service.query.filter_by(tenant_id=tenant_id, category_id=cat.id, is_deleted=False).count()
+            if existing_svcs == 0 and cat_name in DEFAULT_CATEGORY_SERVICES:
+                for s_info in DEFAULT_CATEGORY_SERVICES[cat_name]:
+                    s_obj = Service(
+                        tenant_id=tenant_id,
+                        category_id=cat.id,
+                        name=s_info["name"],
+                        price=s_info["price"],
+                        duration_minutes=s_info["duration"],
+                        status="active",
+                        is_deleted=False
+                    )
+                    db.session.add(s_obj)
+                    added = True
+
+        if added:
+            db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to seed predefined categories/services for tenant {tenant_id}: {str(e)}")
 
 # --- SERVICE CATEGORY CRUD ---
 
 @services_bp.route("/service-categories", methods=["GET"])
 @require_role(["ParlourAdmin"])
 def get_categories():
-    categories = get_tenant_query(ServiceCategory).order_by(ServiceCategory.name.asc()).all()
+    ensure_tenant_categories(g.parlour_id)
+    categories = ServiceCategory.query.filter_by(tenant_id=g.parlour_id, is_deleted=False).order_by(ServiceCategory.name.asc()).all()
     data = [{"id": c.id, "name": c.name} for c in categories]
     return success_response(data)
 

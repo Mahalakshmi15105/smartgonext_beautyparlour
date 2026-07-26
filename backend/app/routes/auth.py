@@ -183,8 +183,11 @@ def register():
             currency_symbol="₹"
         )
         db.session.add(setting)
-
         db.session.commit()
+
+        # Seed predefined beauty categories (Hair Care, Skin Care, Nail Care, Grooming Services)
+        from app.routes.services import ensure_tenant_categories
+        ensure_tenant_categories(tenant.id)
 
         # Issue JWT Access & Refresh Tokens for immediate login
         additional_claims = {

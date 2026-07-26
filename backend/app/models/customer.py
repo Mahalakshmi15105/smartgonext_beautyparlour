@@ -18,3 +18,27 @@ class Customer(db.Model, TimestampMixin, SoftDeleteMixin):
     # Relationships
     memberships = db.relationship("CustomerMembership", back_populates="customer", cascade="all, delete-orphan")
     invoices = db.relationship("Invoice", back_populates="customer")
+
+
+class Reminder(db.Model, TimestampMixin):
+    __tablename__ = "reminders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoices.id"), nullable=True, index=True)
+    reminder_type = db.Column(db.String(50), nullable=False)  # Next visit, Membership renewal, Follow-up appointment
+    reminder_date = db.Column(db.String(50), nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(50), nullable=False, default="Pending")
+
+
+class CustomerFeedback(db.Model, TimestampMixin):
+    __tablename__ = "customer_feedback"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customers.id"), nullable=False, index=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey("invoices.id"), nullable=False, index=True)
+    rating = db.Column(db.Integer, nullable=False, default=5)
+    comments = db.Column(db.Text, nullable=True)

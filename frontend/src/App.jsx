@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "./components/Layout";
 import Customers from "./pages/Customers";
 import Employees from "./pages/Employees";
@@ -14,9 +14,15 @@ import SuperAdmin from "./pages/SuperAdmin";
 import LandingPage from "./pages/LandingPage";
 import Register from "./pages/Register";
 import API from "./services/api";
+import { LogOut, ShieldCheck, Sparkles } from "lucide-react";
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("token"));
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem("user");
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [currentView, setCurrentView] = useState(localStorage.getItem("token") ? "app" : "landing");
   const [activeTab, setActiveTab] = useState("dashboard");
 
@@ -33,8 +39,11 @@ function App() {
 
     API.post("/auth/login", { email, password })
       .then((res) => {
-        localStorage.setItem("token", res.data.token);
-        setToken(res.data.token);
+        const { token, user: userObj } = res.data;
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(userObj));
+        setToken(token);
+        setUser(userObj);
         setLoading(false);
         setCurrentView("app");
         setActiveTab("dashboard");
@@ -47,9 +56,23 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("user");
     setToken(null);
+    setUser(null);
     setCurrentView("landing");
   };
+
+  // Fetch current user details if token exists but user state is missing
+  useEffect(() => {
+    if (token && !user) {
+      API.get("/auth/me")
+        .then((res) => {
+          setUser(res.data);
+          localStorage.setItem("user", JSON.stringify(res.data));
+        })
+        .catch(() => handleLogout());
+    }
+  }, [token]);
 
   // 1. Render Public Landing Page
   if (currentView === "landing") {
@@ -65,8 +88,11 @@ function App() {
   if (currentView === "register") {
     return (
       <Register
-        onRegisterSuccess={(newToken) => {
+        onRegisterSuccess={(newToken, userObj) => {
+          localStorage.setItem("token", newToken);
+          localStorage.setItem("user", JSON.stringify(userObj));
           setToken(newToken);
+          setUser(userObj);
           setCurrentView("app");
           setActiveTab("dashboard");
         }}
@@ -85,8 +111,8 @@ function App() {
             <button onClick={() => setCurrentView("landing")} className="text-xs text-primary font-bold hover:underline mb-2 block mx-auto">
               ← Back to SmartGoNext Home
             </button>
-            <div className="inline-flex h-12 w-12 bg-primary text-white items-center justify-center rounded-xl font-bold text-lg mb-2 shadow-sm">
-              S
+            <div className="inline-flex h-12 w-12 bg-gradient-to-tr from-pink-600 to-rose-400 text-white items-center justify-center rounded-xl font-bold text-lg mb-2 shadow-md shadow-pink-500/20">
+              <Sparkles className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-xl font-bold text-text-primary">Sign in to your account</h1>
             <p className="text-xs text-text-secondary">Enter your admin credentials to access your parlour dashboard.</p>
@@ -145,7 +171,43 @@ function App() {
     );
   }
 
-  // 4. Render Protected App Canvas
+  // 4. SEPARATE SUPER ADMIN ARCHITECTURE: Independent Portal Layout
+  if (user?.role === "SuperAdmin") {
+    return (
+      <div className="min-h-screen bg-background font-sans text-slate-800">
+        <header className="h-16 bg-surface border-b border-border-soft px-8 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="h-9 w-9 bg-slate-900 text-white rounded-xl flex items-center justify-center font-bold text-sm shadow-sm">
+              <ShieldCheck className="w-5 h-5 text-pink-400" />
+            </div>
+            <div>
+              <span className="font-extrabold text-slate-900 text-sm block">SmartGoNext SaaS Platform</span>
+              <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider block -mt-1">Super Admin Console</span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <span className="text-xs bg-slate-900 text-white font-bold px-3 py-1 rounded-full border border-pink-500/30">
+              Super Admin Privilege
+            </span>
+            <button
+              onClick={handleLogout}
+              className="flex items-center space-x-1 text-xs text-danger font-semibold hover:underline"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="p-8 max-w-7xl mx-auto">
+          <SuperAdmin />
+        </main>
+      </div>
+    );
+  }
+
+  // 5. SALON OWNER / PARLOUR ADMIN PORTAL
   const renderContent = () => {
     switch (activeTab) {
       case "dashboard":
@@ -168,8 +230,6 @@ function App() {
         return <Reports />;
       case "settings":
         return <Settings />;
-      case "super_admin":
-        return <SuperAdmin />;
       default:
         return <Dashboard />;
     }

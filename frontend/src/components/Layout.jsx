@@ -57,7 +57,6 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome })
     { id: "customer_memberships", label: "Customer Memberships" },
     { id: "reports", label: "Reports" },
     { id: "settings", label: "Settings" },
-    { id: "super_admin", label: "Super Admin" },
   ];
 
   return (
