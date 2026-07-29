@@ -32,6 +32,14 @@ API.interceptors.response.use(
       errors: []
     };
 
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      localStorage.removeItem("app_currency_code");
+      localStorage.removeItem("app_currency_symbol");
+      localStorage.removeItem("app_language");
+    }
+
     if (error.response && error.response.data) {
       // Use structured backend error format if available
       return Promise.reject(error.response.data);

@@ -32,13 +32,27 @@ def checkout():
         )
 
     # 1. Verify Customer
-    customer = get_tenant_query(Customer).filter_by(id=customer_id).first()
-    if not customer:
-        return error_response(
-            error_code="CUSTOMER_NOT_FOUND",
-            message="Selected customer does not exist.",
-            status_code=400
-        )
+    if customer_id and str(customer_id) != "walkin" and str(customer_id) != "0":
+        customer = get_tenant_query(Customer).filter_by(id=customer_id).first()
+        if not customer:
+            return error_response(
+                error_code="CUSTOMER_NOT_FOUND",
+                message="Selected customer does not exist.",
+                status_code=400
+            )
+    else:
+        customer = get_tenant_query(Customer).filter_by(phone="0000000000").first()
+        if not customer:
+            customer = Customer(
+                tenant_id=g.parlour_id,
+                first_name="Walk-in",
+                last_name="Customer",
+                phone="0000000000",
+                gender="Female"
+            )
+            db.session.add(customer)
+            db.session.flush()
+        customer_id = customer.id
 
     # Fetch default tax rate from settings
     settings = TenantSetting.query.filter_by(tenant_id=g.parlour_id).first()
@@ -47,6 +61,7 @@ def checkout():
     subtotal = Decimal("0.00")
     total_discount = Decimal("0.00")
     line_items_to_save = []
+    response_line_items = []
 
     try:
         # Start database lock context
@@ -66,6 +81,7 @@ def checkout():
             if not emp:
                 raise ValueError(f"Assigned Employee ID {primary_emp_id} is inactive or invalid.")
             employee_id = primary_emp_id
+            emp_name = f"{emp.first_name} {emp.last_name or ''}".strip()
 
             discount_amount = Decimal("0.00")
             item_name = ""
@@ -148,6 +164,17 @@ def checkout():
             )
             line_items_to_save.append(line_item)
 
+            response_line_items.append({
+                "item_name": item_name,
+                "name": item_name,
+                "quantity": qty,
+                "unit_price": float(unit_price),
+                "discount": float(discount_amount),
+                "line_total": float(line_total),
+                "staff_name": emp_name,
+                "employee_name": emp_name
+            })
+
         # 3. Calculate Global Taxes & Grand Total
         # Apply tax on net subtotal (subtotal - discount)
         net_amount = subtotal - total_discount
@@ -208,20 +235,48 @@ def checkout():
     except Exception as e:
         db.session.rollback()
         logger.error(f"Checkout Transaction failed: {str(e)}", exc_info=True)
+        import traceback
+        traceback.print_exc()
         return error_response(
             error_code="TRANSACTION_FAILED",
-            message=str(e) if isinstance(e, ValueError) else "Failed to finalize checkout transaction.",
+            message=str(e) if isinstance(e, ValueError) else f"Checkout Transaction Error: {str(e)}",
             status_code=400 if isinstance(e, ValueError) else 500
         )
 
+    # Build complete return dictionary for newly created invoice
+    full_customer_name = f"{customer.first_name} {customer.last_name or ''}".strip() if customer else "Walk-in Customer"
+    full_customer_phone = customer.phone if customer else ""
+
+    response_payments = []
+    for pay in payments_to_save:
+        response_payments.append({
+            "method": pay.method,
+            "amount": float(pay.amount)
+        })
+
     return success_response({
+        "id": invoice.id,
         "invoice_id": invoice.id,
         "invoice_number": invoice.invoice_number,
+        "created_at": invoice.created_at.isoformat(),
+        "cashier": getattr(g.user, "first_name", "Admin") if hasattr(g, "user") and g.user else "Admin",
+        "customer_id": customer.id if customer else None,
+        "customer_name": full_customer_name,
+        "customer_phone": full_customer_phone,
+        "customer": {
+            "id": customer.id if customer else None,
+            "first_name": customer.first_name if customer else "Walk-in",
+            "last_name": customer.last_name if customer else "Customer",
+            "phone": full_customer_phone
+        },
+        "line_items": response_line_items,
+        "items": response_line_items,
         "subtotal": float(invoice.subtotal),
         "discount": float(invoice.discount),
         "tax": float(invoice.tax),
         "total": float(invoice.total),
-        "status": invoice.status
+        "status": invoice.status,
+        "payments": response_payments
     }, 201)
 
 

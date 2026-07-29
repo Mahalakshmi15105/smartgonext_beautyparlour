@@ -120,7 +120,15 @@ def create_customer():
         return error_response(
             error_code="DUPLICATE_RECORD",
             message=f"A customer with phone number {phone} already exists.",
-            status_code=400
+            status_code=400,
+            details={
+                "existing_customer": {
+                    "id": dup.id,
+                    "first_name": dup.first_name,
+                    "last_name": dup.last_name,
+                    "phone": dup.phone
+                }
+            }
         )
 
     dob = None
@@ -228,7 +236,18 @@ def update_customer(customer_id):
             status_code=500
         )
 
-    return success_response({"message": "Customer updated successfully."})
+    return success_response({
+        "id": customer.id,
+        "first_name": customer.first_name,
+        "last_name": customer.last_name,
+        "phone": customer.phone,
+        "email": customer.email,
+        "gender": customer.gender,
+        "date_of_birth": customer.date_of_birth.isoformat() if customer.date_of_birth else None,
+        "address": customer.address,
+        "notes": customer.notes,
+        "created_at": customer.created_at.isoformat()
+    })
 
 
 @customers_bp.route("/customers/<int:customer_id>", methods=["DELETE"])
@@ -299,3 +318,241 @@ def get_customer_memberships(customer_id):
         })
 
     return success_response(data)
+
+
+@customers_bp.route("/customers/<int:customer_id>/history", methods=["GET"])
+@require_role(["ParlourAdmin"])
+def get_customer_history(customer_id):
+    from app.models.billing import Invoice, InvoiceLineItem, InvoicePayment
+    from app.models.catalog import Service, Product
+    from app.models.employee import Employee
+    from app.models.membership import CustomerMembership, MembershipPlan, MembershipBenefit
+    from collections import defaultdict
+    from decimal import Decimal
+
+    # 1. Verify customer exists in current tenant
+    customer = get_tenant_query(Customer).filter_by(id=customer_id).first()
+    if not customer:
+        return error_response(
+            error_code="CUSTOMER_NOT_FOUND",
+            message="Customer not found or access denied.",
+            status_code=404
+        )
+
+    # 2. Query customer's invoices (tenant isolated)
+    invoices = Invoice.query.filter_by(
+        customer_id=customer_id,
+        tenant_id=g.parlour_id
+    ).order_by(Invoice.created_at.desc()).all()
+
+    # 3. Query active/past memberships
+    memberships = CustomerMembership.query.filter_by(
+        customer_id=customer_id,
+        tenant_id=g.parlour_id
+    ).order_by(CustomerMembership.created_at.desc()).all()
+
+    # Process Invoices & Line Items
+    visit_history = []
+    service_freq = defaultdict(lambda: {"count": 0, "last_date": None, "total_spent": Decimal("0.00")})
+    product_freq = defaultdict(lambda: {"qty": 0, "last_date": None, "total_spent": Decimal("0.00")})
+    stylist_freq = defaultdict(int)
+
+    total_services_amount = Decimal("0.00")
+    total_products_amount = Decimal("0.00")
+    total_discounts_given = Decimal("0.00")
+    total_tax_paid = Decimal("0.00")
+    grand_total_spent = Decimal("0.00")
+
+    timeline = []
+
+    for inv in invoices:
+        if inv.status and inv.status.lower() == "void":
+            continue
+
+        grand_total_spent += Decimal(str(inv.total or 0))
+        total_discounts_given += Decimal(str(inv.discount or 0))
+        total_tax_paid += Decimal(str(inv.tax or 0))
+
+        inv_services = []
+        inv_products = []
+        inv_employees = set()
+
+        line_items_data = []
+        for line in inv.line_items:
+            emp_name = "N/A"
+            if line.employee_id:
+                emp = db.session.get(Employee, line.employee_id)
+                if emp:
+                    emp_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+                    inv_employees.add(emp_name)
+                    stylist_freq[emp_name] += 1
+
+            if line.service_id:
+                svc = db.session.get(Service, line.service_id)
+                svc_name = svc.name if svc else "Service"
+                inv_services.append(svc_name)
+                service_freq[svc_name]["count"] += line.quantity
+                service_freq[svc_name]["total_spent"] += Decimal(str(line.line_total or 0))
+                if not service_freq[svc_name]["last_date"] or inv.created_at.isoformat() > service_freq[svc_name]["last_date"]:
+                    service_freq[svc_name]["last_date"] = inv.created_at.strftime("%Y-%m-%d")
+                total_services_amount += Decimal(str(line.line_total or 0))
+                
+                line_items_data.append({
+                    "id": line.id,
+                    "name": svc_name,
+                    "type": "Service",
+                    "quantity": line.quantity,
+                    "unit_price": float(line.unit_price or 0),
+                    "discount_amount": float(line.discount_amount or 0),
+                    "line_total": float(line.line_total or 0),
+                    "employee_name": emp_name
+                })
+
+            elif line.product_id:
+                prod = db.session.get(Product, line.product_id)
+                prod_name = prod.name if prod else "Product"
+                inv_products.append(prod_name)
+                product_freq[prod_name]["qty"] += line.quantity
+                product_freq[prod_name]["total_spent"] += Decimal(str(line.line_total or 0))
+                if not product_freq[prod_name]["last_date"] or inv.created_at.isoformat() > product_freq[prod_name]["last_date"]:
+                    product_freq[prod_name]["last_date"] = inv.created_at.strftime("%Y-%m-%d")
+                total_products_amount += Decimal(str(line.line_total or 0))
+
+                line_items_data.append({
+                    "id": line.id,
+                    "name": prod_name,
+                    "type": "Product",
+                    "quantity": line.quantity,
+                    "unit_price": float(line.unit_price or 0),
+                    "discount_amount": float(line.discount_amount or 0),
+                    "line_total": float(line.line_total or 0),
+                    "employee_name": emp_name
+                })
+
+        payment_methods = [p.method for p in inv.payments] if inv.payments else ["Cash"]
+
+        visit_row = {
+            "id": inv.id,
+            "invoice_number": inv.invoice_number,
+            "created_at": inv.created_at.strftime("%Y-%m-%d %H:%M"),
+            "date": inv.created_at.strftime("%d %b %Y"),
+            "services": inv_services,
+            "products": inv_products,
+            "employees": list(inv_employees),
+            "subtotal": float(inv.subtotal or 0),
+            "discount": float(inv.discount or 0),
+            "tax": float(inv.tax or 0),
+            "total": float(inv.total or 0),
+            "payment_methods": payment_methods,
+            "status": inv.status,
+            "line_items": line_items_data
+        }
+        visit_history.append(visit_row)
+
+        items_desc = []
+        if inv_services:
+            items_desc.extend(inv_services)
+        if inv_products:
+            items_desc.extend([f"{p} (Product)" for p in inv_products])
+
+        timeline.append({
+            "date": inv.created_at.strftime("%d %b %Y"),
+            "time": inv.created_at.strftime("%I:%M %p"),
+            "type": "visit",
+            "invoice_number": inv.invoice_number,
+            "title": f"Salon Visit - {inv.invoice_number}",
+            "items": items_desc,
+            "amount": float(inv.total or 0)
+        })
+
+    purchased_services = [
+        {
+            "name": name,
+            "times_taken": data["count"],
+            "total_spent": float(data["total_spent"]),
+            "last_taken_date": data["last_date"]
+        } for name, data in service_freq.items()
+    ]
+    purchased_services.sort(key=lambda x: x["times_taken"], reverse=True)
+
+    purchased_products = [
+        {
+            "name": name,
+            "quantity_purchased": data["qty"],
+            "total_spent": float(data["total_spent"]),
+            "last_purchased_date": data["last_date"]
+        } for name, data in product_freq.items()
+    ]
+    purchased_products.sort(key=lambda x: x["quantity_purchased"], reverse=True)
+
+    memberships_data = []
+    active_membership_name = None
+    active_membership_status = "Inactive"
+
+    for m in memberships:
+        plan_name = m.plan.name if m.plan else "Membership Plan"
+        if m.status == "active" and not active_membership_name:
+            active_membership_name = plan_name
+            active_membership_status = "Active"
+
+        benefits = []
+        for b in m.benefits:
+            benefits.append({
+                "service_name": b.service.name if b.service else "Service Perk",
+                "total_quantity": b.total_quantity,
+                "remaining_quantity": b.remaining_quantity
+            })
+
+        memberships_data.append({
+            "id": m.id,
+            "plan_name": plan_name,
+            "start_date": m.created_at.strftime("%Y-%m-%d"),
+            "expiry_date": m.expires_at.strftime("%Y-%m-%d") if m.expires_at else "N/A",
+            "status": m.status,
+            "benefits": benefits
+        })
+
+    preferred_stylist = max(stylist_freq.items(), key=lambda x: x[1])[0] if stylist_freq else "No Preference"
+    preferred_services = [s["name"] for s in purchased_services[:3]]
+
+    summary = {
+        "id": customer.id,
+        "first_name": customer.first_name,
+        "last_name": customer.last_name or "",
+        "full_name": f"{customer.first_name} {customer.last_name or ''}".strip(),
+        "phone": customer.phone,
+        "email": customer.email or "Not Provided",
+        "gender": customer.gender or "Not Specified",
+        "date_joined": customer.created_at.strftime("%d %b %Y"),
+        "membership_status": active_membership_status,
+        "membership_plan": active_membership_name or "None",
+        "total_visits": len(visit_history),
+        "total_bills": len(visit_history),
+        "total_amount_spent": float(grand_total_spent),
+        "last_visit_date": visit_history[0]["date"] if visit_history else "No Visits Yet",
+        "loyalty_points": len(visit_history) * 10,
+        "preferred_stylist": preferred_stylist,
+        "preferred_services": preferred_services,
+        "notes": customer.notes or "Regular salon visitor. Prefers organic hair products.",
+        "allergies": "None Reported"
+    }
+
+    financial_summary = {
+        "total_bills": len(visit_history),
+        "total_services_amount": float(total_services_amount),
+        "total_products_amount": float(total_products_amount),
+        "total_discounts_given": float(total_discounts_given),
+        "total_tax_paid": float(total_tax_paid),
+        "grand_total_spent": float(grand_total_spent)
+    }
+
+    return success_response({
+        "summary": summary,
+        "visit_history": visit_history,
+        "purchased_services": purchased_services,
+        "purchased_products": purchased_products,
+        "memberships": memberships_data,
+        "financial_summary": financial_summary,
+        "timeline": timeline,
+        "upcoming_appointments": []
+    })

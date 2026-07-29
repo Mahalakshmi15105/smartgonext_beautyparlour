@@ -28,7 +28,8 @@ class TenantSetting(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, db.ForeignKey("tenants.id"), nullable=False, unique=True, index=True)
     
-    # Business Profile
+    # Business Profile & Branding
+    logo_url = db.Column(db.String(255), nullable=True)
     owner_name = db.Column(db.String(100), nullable=True)
     alternate_phone = db.Column(db.String(20), nullable=True)
     gst_number = db.Column(db.String(50), nullable=True)
@@ -49,11 +50,31 @@ class TenantSetting(db.Model, TimestampMixin):
     terms_and_conditions = db.Column(db.Text, nullable=True)
     show_logo = db.Column(db.Boolean, nullable=False, default=True)
 
-    # Regional & Currency
+    # Receipt & Thermal Printer Settings
+    receipt_template = db.Column(db.String(50), nullable=False, default="Classic")
+    paper_size = db.Column(db.String(20), nullable=False, default="80mm")
+    show_gst = db.Column(db.Boolean, nullable=False, default=True)
+    show_address = db.Column(db.Boolean, nullable=False, default=True)
+    show_phone = db.Column(db.Boolean, nullable=False, default=True)
+    show_email = db.Column(db.Boolean, nullable=False, default=True)
+    show_website = db.Column(db.Boolean, nullable=False, default=True)
+    show_qr_code = db.Column(db.Boolean, nullable=False, default=False)
+    auto_print = db.Column(db.Boolean, nullable=False, default=False)
+    thank_you_message = db.Column(db.String(255), nullable=True, default="Thank you for visiting. Please visit again.")
+
+    # Regional, Currency & Language
     currency = db.Column(db.String(10), nullable=False, default="INR")
+    currency_code = db.Column(db.String(10), nullable=False, default="INR")
     currency_symbol = db.Column(db.String(10), nullable=False, default="₹")
+    language = db.Column(db.String(30), nullable=False, default="English")
     date_format = db.Column(db.String(50), nullable=False, default="YYYY-MM-DD")
     timezone = db.Column(db.String(50), nullable=False, default="UTC")
+
+    # Theme Settings
+    theme_name = db.Column(db.String(50), nullable=False, default="Default Pink")
+    primary_color = db.Column(db.String(30), nullable=False, default="#EC4899")
+    secondary_color = db.Column(db.String(30), nullable=False, default="#F472B6")
+    accent_color = db.Column(db.String(30), nullable=False, default="#FDF2F8")
 
     # Relationships
     tenant = db.relationship("Tenant", back_populates="settings")

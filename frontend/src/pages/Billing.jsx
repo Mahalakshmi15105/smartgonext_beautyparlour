@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { ThermalReceipt, printThermalReceiptElement, downloadThermalReceiptPDF } from "../components/ThermalReceipt";
+import { getFullImageUrl } from "../utils/imageUrl";
 import {
   User,
   Scissors,
@@ -23,7 +25,22 @@ import {
   Wallet as WalletIcon,
   Eye,
   Calendar,
+  Pencil,
+  UserPlus,
+  Download,
+  ClipboardList,
+  UserRoundX,
+  Crown,
+  BarChart3,
+  Package,
+  Clock,
+  Check,
+  X,
+  Receipt,
 } from "lucide-react";
+
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { useModalFocusTrap, advanceToNextRef, isElementNavigable } from "../utils/keyboardNavigation";
 
 const SUPPORTED_PAYMENT_METHODS = [
   { id: "Cash", label: "Cash", icon: DollarSign, color: "text-emerald-600 bg-emerald-50" },
@@ -39,7 +56,18 @@ const SUPPORTED_PAYMENT_METHODS = [
 ];
 
 function Billing() {
+  const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
   const [activeSubTab, setActiveSubTab] = useState("checkout");
+
+  // Element Refs for POS Keyboard Workflow
+  const customerSelectRef = useRef(null);
+  const genderSelectRef = useRef(null);
+  const categorySelectRef = useRef(null);
+  const serviceSelectRef = useRef(null);
+  const addServiceBtnRef = useRef(null);
+  const checkoutContainerRef = useRef(null);
+  const paymentModalRef = useRef(null);
+  const receiptModalRef = useRef(null);
 
   // Master Datasets
   const [categories, setCategories] = useState([]);
@@ -58,7 +86,6 @@ function Billing() {
 
   // Regional & Tax Settings
   const [taxRate, setTaxRate] = useState(18.0);
-  const [currencySymbol, setCurrencySymbol] = useState("₹");
 
   // Payment Settlement State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -68,7 +95,25 @@ function Billing() {
   // Receipt & Saved Bill Details State
   const [invoiceResult, setInvoiceResult] = useState(null);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [activePopupButton, setActivePopupButton] = useState(null);
   const [selectedInvoiceDetail, setSelectedInvoiceDetail] = useState(null);
+  const [receiptSettings, setReceiptSettings] = useState({
+    receipt_template: "Classic",
+    paper_size: "80mm",
+    show_logo: true,
+    show_gst: true,
+    show_address: true,
+    show_phone: true,
+    show_email: true,
+    show_website: true,
+    show_qr_code: false,
+    auto_print: false,
+    thank_you_message: "Thank you for visiting. Please visit again.",
+  });
+  const [businessProfile, setBusinessProfile] = useState({});
+  const isPrintingRef = useRef(false);
+  const printReceiptRef = useRef(null);
+  const [activePrintInvoice, setActivePrintInvoice] = useState(null);
 
   // Billing History State
   const [invoicesHistory, setInvoicesHistory] = useState([]);
@@ -83,12 +128,230 @@ function Billing() {
 
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackRating, setFeedbackRating] = useState(5);
-  const [feedbackComments, setFeedbackComments] = useState("");
-
   const [actionNotice, setActionNotice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [draftSaved, setDraftSaved] = useState(false);
+
+  // Quick Add / Edit Customer Modal State
+  const [showQuickCustomerModal, setShowQuickCustomerModal] = useState(false);
+  const [quickCustomerEditId, setQuickCustomerEditId] = useState(null);
+  const [quickCustomerForm, setQuickCustomerForm] = useState({
+    first_name: "",
+    last_name: "",
+    phone: "",
+    email: "",
+    gender: "Female",
+    date_of_birth: "",
+  });
+  const [quickCustomerError, setQuickCustomerError] = useState(null);
+  const [quickCustomerSaving, setQuickCustomerSaving] = useState(false);
+
+  // Customer Combobox State
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+
+  // Customer History Modal State
+  const [showCustomerHistoryModal, setShowCustomerHistoryModal] = useState(false);
+  const [customerHistoryTab, setCustomerHistoryTab] = useState("overview");
+  const [customerHistoryData, setCustomerHistoryData] = useState(null);
+  const [customerHistoryLoading, setCustomerHistoryLoading] = useState(false);
+  const [customerHistoryError, setCustomerHistoryError] = useState(null);
+  const [readOnlyInvoiceDetail, setReadOnlyInvoiceDetail] = useState(null);
+
+  const quickCustomerModalRef = useRef(null);
+  const quickCustomerFormRef = useRef(null);
+  const customerComboboxRef = useRef(null);
+  const customerHistoryModalRef = useRef(null);
+
+  useModalFocusTrap(showPaymentModal, paymentModalRef, () => setShowPaymentModal(false));
+  useModalFocusTrap(showReceipt, receiptModalRef, () => setShowReceipt(false));
+  useModalFocusTrap(showQuickCustomerModal, quickCustomerModalRef, () => setShowQuickCustomerModal(false));
+  useModalFocusTrap(showCustomerHistoryModal, customerHistoryModalRef, () => setShowCustomerHistoryModal(false));
+
+  const openCustomerHistory = () => {
+    if (!selectedCustomerId || selectedCustomerId === "walkin") {
+      alert("Walk-in customers do not have a stored history profile. Select a registered customer to view history.");
+      return;
+    }
+    setCustomerHistoryData(null);
+    setCustomerHistoryLoading(true);
+    setCustomerHistoryError(null);
+    setCustomerHistoryTab("overview");
+    setShowCustomerHistoryModal(true);
+
+    API.get(`/customers/${selectedCustomerId}/history`)
+      .then((res) => {
+        setCustomerHistoryData(res.data.data || res.data || {});
+        setCustomerHistoryLoading(false);
+      })
+      .catch((err) => {
+        setCustomerHistoryError(err.response?.data?.message || err.message || "Failed to load customer history.");
+        setCustomerHistoryLoading(false);
+      });
+  };
+
+  const handleExportCustomerHistory = () => {
+    if (!customerHistoryData) return;
+    const summary = customerHistoryData.summary || {};
+    const visits = customerHistoryData.visit_history || [];
+    
+    let csvContent = `Customer Profile: ${summary.full_name} (${summary.phone})\n`;
+    csvContent += `Total Visits: ${summary.total_visits}, Total Spent: ${summary.total_amount_spent}\n\n`;
+    csvContent += `Invoice Number,Date,Services,Products,Amount,Status\n`;
+    visits.forEach((v) => {
+      const svcs = (v.services || []).join("; ");
+      const prods = (v.products || []).join("; ");
+      csvContent += `"${v.invoice_number}","${v.date}","${svcs}","${prods}",${v.total},"${v.status}"\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Customer_History_${summary.full_name ? summary.full_name.replace(/\s+/g, "_") : "Client"}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Auto-close customer dropdown when clicking or moving focus outside combobox container
+  useEffect(() => {
+    const handleOutsideInteraction = (e) => {
+      if (customerComboboxRef.current && !customerComboboxRef.current.contains(e.target)) {
+        setIsCustomerDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideInteraction);
+    document.addEventListener("focusin", handleOutsideInteraction);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideInteraction);
+      document.removeEventListener("focusin", handleOutsideInteraction);
+    };
+  }, []);
+
+  const fetchReceiptSettings = () => {
+    API.get("/settings")
+      .then((res) => {
+        if (res.data) {
+          if (res.data.receipt_settings) {
+            setReceiptSettings(res.data.receipt_settings);
+          }
+          if (res.data.business_profile) {
+            setBusinessProfile(res.data.business_profile);
+          }
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchReceiptSettings();
+  }, []);
+
+  const openQuickAddCustomer = (prefillName = "") => {
+    setQuickCustomerEditId(null);
+    setQuickCustomerForm({
+      first_name: prefillName,
+      last_name: "",
+      phone: "",
+      email: "",
+      gender: selectedGender || "Female",
+      date_of_birth: "",
+    });
+    setQuickCustomerError(null);
+    setShowQuickCustomerModal(true);
+    setIsCustomerDropdownOpen(false);
+  };
+
+  const openQuickEditCustomer = () => {
+    if (!selectedCustomerId || selectedCustomerId === "walkin") return;
+    const cust = customers.find((c) => c.id === parseInt(selectedCustomerId));
+    if (!cust) return;
+
+    setQuickCustomerEditId(cust.id);
+    setQuickCustomerForm({
+      first_name: cust.first_name || "",
+      last_name: cust.last_name || "",
+      phone: cust.phone || "",
+      email: cust.email || "",
+      gender: cust.gender || "Female",
+      date_of_birth: cust.date_of_birth || "",
+    });
+    setQuickCustomerError(null);
+    setShowQuickCustomerModal(true);
+    setIsCustomerDropdownOpen(false);
+  };
+
+  const handleQuickCustomerSubmit = (e) => {
+    if (e) e.preventDefault();
+    setQuickCustomerError(null);
+
+    const first_name = quickCustomerForm.first_name.trim();
+    const phone = quickCustomerForm.phone.trim();
+
+    if (!first_name || !phone) {
+      setQuickCustomerError("Customer First Name and Mobile Number are required.");
+      return;
+    }
+
+    const phoneRegex = /^[0-9+\-\s]{7,15}$/;
+    if (!phoneRegex.test(phone)) {
+      setQuickCustomerError("Please enter a valid mobile number (7-15 digits).");
+      return;
+    }
+
+    // Check duplicate phone in local customer array
+    const dupLoc = customers.find(
+      (c) => c.phone && c.phone.trim() === phone && c.id !== quickCustomerEditId
+    );
+    if (dupLoc) {
+      alert(`Customer with mobile number ${phone} already exists (${dupLoc.first_name} ${dupLoc.last_name || ""}). Automatically selecting existing customer.`);
+      setSelectedCustomerId(String(dupLoc.id));
+      setSelectedGender(dupLoc.gender || "Female");
+      setCustomerSearchQuery(`${dupLoc.first_name} ${dupLoc.last_name || ""} (${dupLoc.phone})`);
+      setShowQuickCustomerModal(false);
+      setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 100);
+      return;
+    }
+
+    setQuickCustomerSaving(true);
+    const payload = { ...quickCustomerForm, first_name, phone };
+    const apiCall = quickCustomerEditId
+      ? API.put(`/customers/${quickCustomerEditId}`, payload)
+      : API.post("/customers", payload);
+
+    apiCall
+      .then((res) => {
+        const savedCust = res.data?.data || res.data;
+        API.get("/customers?limit=100").then((resList) => {
+          setCustomers(resList.data.items || []);
+        });
+
+        if (savedCust && savedCust.id) {
+          setSelectedCustomerId(String(savedCust.id));
+          setSelectedGender(savedCust.gender || "Female");
+          setCustomerSearchQuery(`${savedCust.first_name} ${savedCust.last_name || ""} (${savedCust.phone})`);
+        }
+        setShowQuickCustomerModal(false);
+        setQuickCustomerSaving(false);
+        setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 100);
+      })
+      .catch((err) => {
+        setQuickCustomerSaving(false);
+        const dupData = err.response?.data?.details?.existing_customer;
+        if (dupData && dupData.id) {
+          alert(`Customer with mobile number ${phone} already exists (${dupData.first_name}). Automatically selecting existing customer.`);
+          setSelectedCustomerId(String(dupData.id));
+          setCustomerSearchQuery(`${dupData.first_name} ${dupData.last_name || ""} (${dupData.phone})`);
+          setShowQuickCustomerModal(false);
+          setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 100);
+        } else {
+          setQuickCustomerError(err.response?.data?.message || err.message || "Failed to save customer.");
+        }
+      });
+  };
 
   // Initial Load: Fetch Categories, Employees, Customers, Settings
   useEffect(() => {
@@ -340,17 +603,82 @@ function Billing() {
     setLoading(true);
     API.post("/billing/checkout", payload)
       .then((res) => {
-        setInvoiceResult(res.data);
+        const fullInvoice = res.data;
+        setInvoiceResult(fullInvoice);
+        setActivePrintInvoice(fullInvoice);
         setShowPaymentModal(false);
         setShowReceipt(true);
         setCart([]);
         setLoading(false);
         fetchBillingHistory();
+
+        if (receiptSettings.auto_print) {
+          setTimeout(() => {
+            handlePrintThermalReceipt(fullInvoice);
+          }, 400);
+        }
       })
       .catch((err) => {
         alert(err.message || "Checkout transaction failed.");
         setLoading(false);
       });
+  };
+
+  const handlePrintThermalReceipt = (inv = null) => {
+    if (isPrintingRef.current) return;
+    
+    const targetCustomer = customers.find(c => String(c.id) === String(selectedCustomerId));
+    const draftFromCart = cart.length > 0 ? {
+      invoice_number: `INV-DRAFT-${Date.now().toString().slice(-4)}`,
+      created_at: new Date().toISOString(),
+      cashier: "Admin",
+      customer_name: targetCustomer ? `${targetCustomer.first_name || ''} ${targetCustomer.last_name || ''}`.trim() : "Walk-in Customer",
+      customer_phone: targetCustomer?.phone || "",
+      line_items: cart.map(item => ({
+        item_name: item.name,
+        quantity: item.qty,
+        unit_price: item.price,
+        line_total: item.price * item.qty,
+        staff_name: employees.find(e => String(e.id) === String(item.employee_id))?.first_name || ""
+      })),
+      subtotal: totalAmount,
+      discount: totalDiscount,
+      tax: taxAmount,
+      total: netPayable,
+      payments: selectedPaymentMethods.map(m => ({ method: m, amount: paymentAmounts[m] || netPayable }))
+    } : null;
+
+    const targetInvoice = inv || invoiceResult || selectedInvoiceDetail || draftFromCart;
+
+    if (!targetInvoice) {
+      alert("No invoice data available to print.");
+      return;
+    }
+
+    isPrintingRef.current = true;
+    setActivePrintInvoice(targetInvoice);
+    setActivePopupButton("print");
+
+    setTimeout(() => {
+      printThermalReceiptElement(printReceiptRef, receiptSettings?.paper_size || "80mm");
+      setTimeout(() => {
+        isPrintingRef.current = false;
+      }, 1000);
+    }, 150);
+  };
+
+  const handleDownloadPDF = (inv = null) => {
+    setActivePopupButton("pdf");
+    const targetInvoice = inv || invoiceResult || selectedInvoiceDetail || activePrintInvoice;
+    const invNumber = targetInvoice?.invoice_number || targetInvoice?.id || "INV-0001";
+
+    if (targetInvoice) {
+      setActivePrintInvoice(targetInvoice);
+    }
+
+    setTimeout(() => {
+      downloadThermalReceiptPDF(printReceiptRef, invNumber, receiptSettings?.paper_size || "80mm");
+    }, 150);
   };
 
   const handleReset = () => {
@@ -381,27 +709,67 @@ function Billing() {
   };
 
   // --- BILL ACTIONS IMPLEMENTATIONS ---
-  const triggerSMSBill = (inv) => {
-    API.post(`/invoices/${inv.id}/sms`)
-      .then((res) => {
-        setActionNotice(`SMS dispatched to ${inv.customer.phone}: "${res.data.sms_content}"`);
-        setTimeout(() => setActionNotice(null), 4000);
-      })
-      .catch(() => {
-        setActionNotice(`SMS receipt composed and queued for ${inv.customer.phone}`);
-        setTimeout(() => setActionNotice(null), 4000);
-      });
+  const triggerSMSBill = (inv = null) => {
+    const targetInv = inv || invoiceResult || selectedInvoiceDetail || activePrintInvoice;
+    const targetCust = customers.find((c) => String(c.id) === String(selectedCustomerId));
+    const phone = targetInv?.customer_phone || targetInv?.customer?.phone || targetCust?.phone || "";
+
+    if (!phone || phone.trim() === "") {
+      alert("Customer mobile number not available.");
+      return;
+    }
+
+    const parlourName = businessProfile?.name || "Beauty Parlour";
+    const customerName = targetInv?.customer_name || targetInv?.customer?.first_name || targetCust?.first_name || "Customer";
+    const billNo = targetInv?.invoice_number || targetInv?.id || "N/A";
+    const totalVal = targetInv?.total || targetInv?.net_payable || 0;
+    const amountStr = formatCurrency(totalVal);
+    const smsMsg = `Hello ${customerName}, thank you for visiting ${parlourName}! Bill No: ${billNo}, Amount Paid: ${amountStr}. Thank you!`;
+
+    if (targetInv?.id) {
+      API.post(`/invoices/${targetInv.id}/sms`)
+        .then((res) => {
+          alert(res.data?.message || `SMS dispatched to ${phone}`);
+        })
+        .catch((err) => {
+          if (err.response?.status === 404 || err.response?.data?.message?.includes("not configured")) {
+            alert("SMS service is not configured.");
+          } else {
+            window.open(`sms:${phone}?body=${encodeURIComponent(smsMsg)}`, "_blank");
+          }
+        });
+    } else {
+      window.open(`sms:${phone}?body=${encodeURIComponent(smsMsg)}`, "_blank");
+    }
   };
 
-  const triggerWhatsAppWeb = (inv) => {
+  const triggerWhatsAppWeb = (inv = null) => {
+    const targetInv = inv || invoiceResult || selectedInvoiceDetail || activePrintInvoice;
+    const targetCust = customers.find((c) => String(c.id) === String(selectedCustomerId));
+    const rawPhone = targetInv?.customer_phone || targetInv?.customer?.phone || targetCust?.phone || "";
+    const cleanPhone = rawPhone.replace(/[^0-9]/g, "");
+
+    if (!cleanPhone || cleanPhone.length < 5) {
+      alert("Customer mobile number not available.");
+      return;
+    }
+
+    const formattedPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const parlourName = businessProfile?.name || "Beauty Parlour";
+    const customerName = targetInv?.customer_name || targetInv?.customer?.first_name || targetCust?.first_name || "Customer";
+    const billNo = targetInv?.invoice_number || targetInv?.id || "N/A";
+    const totalVal = targetInv?.total || targetInv?.net_payable || 0;
+    const amountStr = formatCurrency(totalVal);
+    const thankYouMsg = receiptSettings?.thank_you_message || "Thank you for visiting. Please visit again!";
+
     const text = encodeURIComponent(
-      `Hello ${inv.customer.first_name}, thank you for visiting SmartGoNext Beauty Parlour!\n` +
-        `Invoice #: ${inv.invoice_number}\n` +
-        `Total Paid: ${currencySymbol} ${inv.total.toFixed(2)}\n` +
-        `We appreciate your business! Have a wonderful day!`
+      `Hello ${customerName}, thank you for visiting ${parlourName}!\n` +
+        `Bill No: ${billNo}\n` +
+        `Amount Paid: ${amountStr}\n` +
+        `${thankYouMsg}`
     );
-    const cleanPhone = (inv.customer.phone || "").replace(/[^0-9]/g, "");
-    window.open(`https://wa.me/${cleanPhone}?text=${text}`, "_blank");
+
+    window.open(`https://wa.me/${formattedPhone}?text=${text}`, "_blank");
   };
 
   const handleSaveReminderSubmit = () => {
@@ -501,27 +869,152 @@ function Billing() {
             </div>
 
             <div className="grid md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Select Customer *</label>
-                <select
-                  value={selectedCustomerId}
-                  onChange={(e) => handleCustomerChange(e.target.value)}
-                  className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
-                >
-                  <option value="">-- Choose Existing Client --</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.first_name} {c.last_name || ""} ({c.phone || "No Phone"})
-                    </option>
-                  ))}
-                </select>
+              <div ref={customerComboboxRef} className="relative">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-slate-700">Type or Select Customer *</label>
+                  {selectedCustomerId && selectedCustomerId !== "walkin" && (
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={openCustomerHistory}
+                        className="text-xs bg-primary/10 hover:bg-primary/20 text-primary px-2.5 py-1 rounded-lg font-bold flex items-center space-x-1 transition shadow-2xs"
+                        title="View complete customer history, visits, notes & preferences"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                        <span>Customer History</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openQuickEditCustomer}
+                        className="text-xs text-primary hover:underline flex items-center space-x-1 font-semibold"
+                        title="Edit selected customer details"
+                      >
+                        <Pencil className="w-3 h-3" />
+                        <span>Edit</span>
+                      </button>
+                    </div>
+                  )}
+                  {selectedCustomerId === "walkin" && (
+                    <button
+                      type="button"
+                      onClick={() => openQuickAddCustomer()}
+                      className="text-xs text-primary hover:underline flex items-center space-x-1 font-semibold"
+                      title="Convert Walk-in to Registered Customer"
+                    >
+                      <UserPlus className="w-3 h-3" />
+                      <span>+ Convert to Customer</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <input
+                    ref={customerSelectRef}
+                    type="text"
+                    placeholder="Search by Name or Phone..."
+                    value={customerSearchQuery}
+                    onFocus={() => setIsCustomerDropdownOpen(true)}
+                    onChange={(e) => {
+                      setCustomerSearchQuery(e.target.value);
+                      setIsCustomerDropdownOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        setIsCustomerDropdownOpen(false);
+                        advanceToNextRef(e.target, genderSelectRef);
+                      } else if (e.key === "Escape") {
+                        setIsCustomerDropdownOpen(false);
+                      }
+                    }}
+                    className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary pr-8"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3 pointer-events-none" />
+
+                  {/* Dropdown Options List */}
+                  {isCustomerDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-soft rounded-xl shadow-xl z-50 max-h-60 overflow-y-auto text-xs">
+                      {/* Pinned Walk-in Customer Option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedCustomerId("walkin");
+                          setCustomerSearchQuery("Walk-in Customer");
+                          setIsCustomerDropdownOpen(false);
+                          setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 50);
+                        }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-primary-light/50 flex items-center justify-between border-b border-border-soft font-bold text-primary"
+                      >
+                        <span className="flex items-center space-x-1.5">
+                          <User className="w-3.5 h-3.5 text-primary" />
+                          <span>Walk-in Customer</span>
+                        </span>
+                        <span className="text-[10px] bg-primary-light text-primary px-2 py-0.5 rounded-full font-bold">Default</span>
+                      </button>
+
+                      {/* Filtered Existing Customers */}
+                      {customers
+                        .filter((c) => {
+                          if (!customerSearchQuery || customerSearchQuery === "Walk-in Customer") return true;
+                          const q = customerSearchQuery.toLowerCase().trim();
+                          const name = `${c.first_name || ""} ${c.last_name || ""}`.toLowerCase();
+                          const phone = (c.phone || "").toLowerCase();
+                          return name.includes(q) || phone.includes(q);
+                        })
+                        .map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomerId(String(c.id));
+                              setSelectedGender(c.gender || "Female");
+                              setCustomerSearchQuery(`${c.first_name} ${c.last_name || ""} (${c.phone || "No Phone"})`);
+                              setIsCustomerDropdownOpen(false);
+                              setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 50);
+                            }}
+                            className="w-full text-left px-4 py-2 hover:bg-background flex items-center justify-between border-b border-border-soft/40"
+                          >
+                            <div>
+                              <span className="font-semibold text-slate-900">{c.first_name} {c.last_name || ""}</span>
+                              <span className="text-slate-500 text-[11px] block">{c.phone || "No Mobile"}</span>
+                            </div>
+                            {selectedCustomerId === String(c.id) && (
+                              <span className="text-primary font-bold flex items-center space-x-1">
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Selected</span>
+                              </span>
+                            )}
+                          </button>
+                        ))}
+
+                      {/* Quick Add Option */}
+                      <button
+                        type="button"
+                        onClick={() => openQuickAddCustomer(customerSearchQuery !== "Walk-in Customer" ? customerSearchQuery : "")}
+                        className="w-full text-left px-4 py-2.5 bg-primary/5 hover:bg-primary/10 text-primary font-extrabold flex items-center space-x-2"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>
+                          + Add New Customer {customerSearchQuery && customerSearchQuery !== "Walk-in Customer" ? `"${customerSearchQuery}"` : ""}
+                        </span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Gender *</label>
                 <select
+                  ref={genderSelectRef}
                   value={selectedGender}
                   onChange={(e) => setSelectedGender(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      advanceToNextRef(e.target, categorySelectRef);
+                    }
+                  }}
                   className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
                 >
                   <option value="Female">Female</option>
@@ -532,13 +1025,27 @@ function Billing() {
 
               <div className="bg-primary-light border border-primary/20 p-3 rounded-xl flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] uppercase font-bold text-primary">Active Client</p>
+                  <div className="flex items-center space-x-2">
+                    <p className="text-[10px] uppercase font-bold text-primary">Active Client</p>
+                    {selectedCustomerId && selectedCustomerId !== "walkin" && (() => {
+                      const selectedCust = customers.find((c) => c.id === parseInt(selectedCustomerId));
+                      if (selectedCust?.days_since_last_visit && selectedCust.days_since_last_visit >= 60) {
+                        return (
+                          <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center space-x-1">
+                            <UserRoundX className="w-3 h-3 text-indigo-600" />
+                            <span>Inactive • {selectedCust.days_since_last_visit} Days</span>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                   <p className="text-xs font-extrabold text-slate-900">
-                    {selectedCustomerId
-                      ? customers.find((c) => c.id === parseInt(selectedCustomerId))?.first_name +
+                    {selectedCustomerId && selectedCustomerId !== "walkin"
+                      ? (customers.find((c) => c.id === parseInt(selectedCustomerId))?.first_name || "") +
                         " " +
                         (customers.find((c) => c.id === parseInt(selectedCustomerId))?.last_name || "")
-                      : "Walk-in Guest"}
+                      : "Walk-in Customer"}
                   </p>
                 </div>
                 <span className="text-xs font-bold bg-white text-primary px-3 py-1 rounded-full border border-primary/20">
@@ -559,8 +1066,15 @@ function Billing() {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Category *</label>
                 <select
+                  ref={categorySelectRef}
                   value={selectedCategoryId}
                   onChange={(e) => setSelectedCategoryId(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      advanceToNextRef(e.target, serviceSelectRef);
+                    }
+                  }}
                   className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
                 >
                   <option value="">-- Select Category --</option>
@@ -575,8 +1089,15 @@ function Billing() {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Service *</label>
                 <select
+                  ref={serviceSelectRef}
                   value={selectedServiceId}
                   onChange={(e) => setSelectedServiceId(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      advanceToNextRef(e.target, addServiceBtnRef);
+                    }
+                  }}
                   disabled={!selectedCategoryId}
                   className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary disabled:opacity-50"
                 >
@@ -590,7 +1111,15 @@ function Billing() {
               </div>
 
               <button
-                onClick={() => handleAddServiceToCart(selectedServiceId)}
+                ref={addServiceBtnRef}
+                onClick={() => {
+                  handleAddServiceToCart(selectedServiceId);
+                  setTimeout(() => {
+                    if (serviceSelectRef.current && isElementNavigable(serviceSelectRef.current)) {
+                      serviceSelectRef.current.focus();
+                    }
+                  }, 50);
+                }}
                 disabled={!selectedServiceId}
                 className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-pink-500/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
               >
@@ -896,13 +1425,33 @@ function Billing() {
                           {inv.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-2">
+                      <td className="px-4 py-3 text-right space-x-1">
                         <button
                           onClick={() => handleViewInvoiceDetail(inv.id)}
                           className="bg-primary/10 hover:bg-primary/20 text-primary p-1.5 rounded-lg transition"
-                          title="View Invoice Details & Actions"
+                          title="View Receipt Details"
                         >
                           <Eye className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleViewInvoiceDetail(inv.id);
+                            setTimeout(() => handlePrintThermalReceipt(inv), 300);
+                          }}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-lg transition"
+                          title="Print Thermal Receipt"
+                        >
+                          <Printer className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            handleViewInvoiceDetail(inv.id);
+                            setTimeout(() => handleDownloadPDF(inv), 300);
+                          }}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 p-1.5 rounded-lg transition"
+                          title="Download PDF Invoice"
+                        >
+                          <FileText className="w-4 h-4" />
                         </button>
                       </td>
                     </tr>
@@ -917,14 +1466,14 @@ function Billing() {
       {/* Split Multi-Payment Settlement Modal */}
       {showPaymentModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-xl w-full rounded-2xl shadow-2xl border border-border-soft overflow-hidden">
+          <div ref={paymentModalRef} className="bg-surface max-w-xl w-full rounded-2xl shadow-2xl border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center bg-primary-light">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900">Split Multi-Payment Settlement</h3>
                 <p className="text-[10px] text-text-secondary">Select one or multiple payment channels & enter amounts</p>
               </div>
-              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1021,48 +1570,109 @@ function Billing() {
         </div>
       )}
 
-      {/* Thermal Receipt Preview Modal */}
+      {/* Thermal Receipt Preview & Save Bill Success Popup */}
       {showReceipt && invoiceResult && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-sm w-full rounded-2xl shadow-2xl border border-border-soft overflow-hidden p-6 space-y-4">
-            <div className="text-center border-b border-border-soft pb-3">
-              <h2 className="text-base font-extrabold text-slate-900">SmartGoNext Beauty Parlour</h2>
-              <p className="text-[10px] text-text-secondary">Official Saved Invoice Receipt</p>
-              <p className="text-xs font-bold text-primary mt-1">{invoiceResult.invoice_number}</p>
-            </div>
-
-            <div className="space-y-1 text-xs text-slate-700">
-              <div className="flex justify-between">
-                <span>Subtotal:</span>
-                <span className="font-bold">{currencySymbol} {invoiceResult.subtotal.toFixed(2)}</span>
+          <div className="bg-surface max-w-lg w-full rounded-2xl shadow-2xl border border-border-soft overflow-hidden p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-border-soft pb-3">
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="w-5 h-5 text-emerald-500" />
+                <h2 className="text-sm font-extrabold text-slate-900">Bill Saved Successfully!</h2>
               </div>
-              <div className="flex justify-between text-danger">
-                <span>Discount:</span>
-                <span className="font-bold">-{currencySymbol} {invoiceResult.discount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Tax:</span>
-                <span className="font-bold">{currencySymbol} {invoiceResult.tax.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-extrabold text-primary border-t border-border-soft pt-2">
-                <span>Total Paid:</span>
-                <span>{currencySymbol} {invoiceResult.total.toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-border-soft flex space-x-3">
               <button
-                onClick={() => window.print()}
-                className="flex-1 bg-primary hover:bg-primary-hover text-white py-2 rounded-xl text-xs font-bold flex items-center justify-center space-x-1"
+                onClick={() => {
+                  setShowReceipt(false);
+                  setActivePopupButton(null);
+                }}
+                className="text-xs font-bold text-slate-400 hover:text-slate-700 p-1"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print Receipt</span>
+                <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Live Thermal Receipt Component */}
+            <div className="py-2 bg-slate-900/5 rounded-xl flex justify-center border border-border-soft overflow-x-auto">
+              <ThermalReceipt
+                ref={printReceiptRef}
+                invoice={invoiceResult}
+                settings={receiptSettings}
+                businessProfile={businessProfile}
+              />
+            </div>
+
+            {/* Complete Bill Quick Actions */}
+            <div className="pt-2 border-t border-border-soft space-y-2">
+              <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Receipt & Distribution Actions:</p>
+              <div className="grid grid-cols-4 gap-2 text-xs">
+                {/* 1. Print Thermal Receipt */}
+                <button
+                  onClick={handlePrintThermalReceipt}
+                  className={`py-2 px-2 rounded-xl font-bold flex items-center justify-center space-x-1 transition ${
+                    activePopupButton === "print"
+                      ? "bg-primary text-white shadow-md shadow-pink-500/20"
+                      : "bg-background hover:bg-slate-100 border border-border-soft text-slate-700"
+                  }`}
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print</span>
+                </button>
+
+                {/* 2. Download PDF */}
+                <button
+                  onClick={handleDownloadPDF}
+                  className={`py-2 px-2 rounded-xl font-bold flex items-center justify-center space-x-1 transition ${
+                    activePopupButton === "pdf"
+                      ? "bg-primary text-white shadow-md shadow-pink-500/20"
+                      : "bg-background hover:bg-slate-100 border border-border-soft text-slate-700"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Download PDF</span>
+                </button>
+
+                {/* 3. SMS Bill */}
+                <button
+                  onClick={() => {
+                    setActivePopupButton("sms");
+                    triggerSMSBill(invoiceResult);
+                  }}
+                  className={`py-2 px-2 rounded-xl font-bold flex items-center justify-center space-x-1 transition ${
+                    activePopupButton === "sms"
+                      ? "bg-primary text-white shadow-md shadow-pink-500/20"
+                      : "bg-background hover:bg-slate-100 border border-border-soft text-slate-700"
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>SMS</span>
+                </button>
+
+                {/* 4. WhatsApp Web */}
+                <button
+                  onClick={() => {
+                    setActivePopupButton("whatsapp");
+                    triggerWhatsAppWeb(invoiceResult);
+                  }}
+                  className={`py-2 px-2 rounded-xl font-bold flex items-center justify-center space-x-1 transition ${
+                    activePopupButton === "whatsapp"
+                      ? "bg-primary text-white shadow-md shadow-pink-500/20"
+                      : "bg-background hover:bg-slate-100 border border-border-soft text-slate-700"
+                  }`}
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>WhatsApp</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
               <button
-                onClick={() => setShowReceipt(false)}
-                className="flex-1 bg-background hover:bg-slate-100 border border-border-soft text-slate-700 py-2 rounded-xl text-xs font-bold"
+                onClick={() => {
+                  setShowReceipt(false);
+                  setActivePopupButton(null);
+                }}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-xl text-xs font-bold"
               >
-                Close
+                Close & Complete
               </button>
             </div>
           </div>
@@ -1082,8 +1692,8 @@ function Billing() {
                   Customer: {selectedInvoiceDetail.customer.first_name} {selectedInvoiceDetail.customer.last_name || ""} ({selectedInvoiceDetail.customer.phone})
                 </p>
               </div>
-              <button onClick={() => setSelectedInvoiceDetail(null)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <button onClick={() => setSelectedInvoiceDetail(null)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1131,7 +1741,7 @@ function Billing() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {/* 1. Print Bill */}
                 <button
-                  onClick={() => window.print()}
+                  onClick={handlePrintThermalReceipt}
                   className="bg-primary hover:bg-primary-hover text-white py-2 rounded-xl font-bold flex items-center justify-center space-x-1.5 shadow-xs"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -1188,8 +1798,8 @@ function Billing() {
                 <Bell className="w-4 h-4 text-amber-600" />
                 <span>Schedule Customer Reminder</span>
               </h3>
-              <button onClick={() => setShowReminderModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <button onClick={() => setShowReminderModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1257,8 +1867,8 @@ function Billing() {
                 <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                 <span>Record Customer Rating & Feedback</span>
               </h3>
-              <button onClick={() => setShowFeedbackModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <button onClick={() => setShowFeedbackModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
@@ -1310,6 +1920,656 @@ function Billing() {
           </div>
         </div>
       )}
+
+      {/* Quick Add / Edit Customer Modal */}
+      {showQuickCustomerModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div ref={quickCustomerModalRef} className="bg-surface max-w-md w-full rounded-2xl shadow-2xl border border-border-soft overflow-hidden">
+            <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center bg-background">
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center space-x-2">
+                <User className="w-4 h-4 text-primary" />
+                <span>{quickCustomerEditId ? "Quick Edit Customer Details" : "Quick Add New Customer"}</span>
+              </h3>
+              <button onClick={() => setShowQuickCustomerModal(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form ref={quickCustomerFormRef} onSubmit={handleQuickCustomerSubmit} className="p-6 space-y-4">
+              {quickCustomerError && (
+                <div className="p-3 bg-danger/10 border border-danger/20 rounded-xl text-xs font-bold text-danger">
+                  {quickCustomerError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Mahalakshmi"
+                    value={quickCustomerForm.first_name}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, first_name: e.target.value })}
+                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. S"
+                    value={quickCustomerForm.last_name}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, last_name: e.target.value })}
+                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Mobile Number *</label>
+                <input
+                  type="tel"
+                  required
+                  placeholder="e.g. 9876543210"
+                  value={quickCustomerForm.phone}
+                  onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, phone: e.target.value })}
+                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Gender *</label>
+                  <select
+                    value={quickCustomerForm.gender}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, gender: e.target.value })}
+                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                  >
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Date of Birth</label>
+                  <input
+                    type="date"
+                    value={quickCustomerForm.date_of_birth}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, date_of_birth: e.target.value })}
+                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Email (Optional)</label>
+                <input
+                  type="email"
+                  placeholder="client@gmail.com"
+                  value={quickCustomerForm.email}
+                  onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, email: e.target.value })}
+                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="pt-4 border-t border-border-soft flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickCustomerModal(false)}
+                  className="px-4 py-2 border border-border-soft rounded-xl text-xs font-bold text-slate-600 hover:bg-background"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickCustomerSaving}
+                  className="px-5 py-2 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-extrabold shadow-md disabled:opacity-50"
+                >
+                  {quickCustomerSaving ? "Saving Customer..." : quickCustomerEditId ? "Update Details" : "Save & Select Customer"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* CUSTOMER HISTORY MODAL */}
+      {showCustomerHistoryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div
+            ref={customerHistoryModalRef}
+            className="bg-surface border border-border-soft rounded-3xl shadow-2xl max-w-5xl w-full p-6 space-y-6 my-8 max-h-[90vh] flex flex-col"
+          >
+            {(() => {
+              const summary = customerHistoryData?.summary || {};
+              const financialSummary = customerHistoryData?.financial_summary || {};
+              const visitHistory = customerHistoryData?.visit_history || [];
+              const purchasedServices = customerHistoryData?.purchased_services || [];
+              const purchasedProducts = customerHistoryData?.purchased_products || [];
+              const memberships = customerHistoryData?.memberships || [];
+              const timelineEvents = customerHistoryData?.timeline || [];
+
+              return (
+                <>
+                  {/* Modal Header */}
+                  <div className="flex justify-between items-start border-b border-border-soft pb-4 flex-wrap gap-4">
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <h3 className="text-lg font-black text-slate-900 flex items-center space-x-2">
+                          <History className="w-5 h-5 text-primary" />
+                          <span>Customer History & Client Profile</span>
+                          {summary.membership_status === "Active" && (
+                            <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider flex items-center space-x-1">
+                              <Crown className="w-3.5 h-3.5 text-amber-700" />
+                              <span>{summary.membership_plan || "Active"} Member</span>
+                            </span>
+                          )}
+                        </h3>
+                      </div>
+                      <p className="text-xs font-semibold text-slate-500 mt-1">
+                        {summary.full_name || "Client"} • Phone: {summary.phone || "N/A"} • Joined: {summary.date_joined || "N/A"}
+                      </p>
+                    </div>
+
+                    {/* Quick Action Header Buttons */}
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomerHistoryModal(false)}
+                        className="px-3 py-1.5 bg-primary hover:bg-primary-hover text-white rounded-xl text-xs font-extrabold flex items-center space-x-1 shadow-xs"
+                        title="Return to current POS billing screen"
+                      >
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        <span>Create Bill</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCustomerHistoryModal(false);
+                          openQuickEditCustomer();
+                        }}
+                        className="px-3 py-1.5 border border-border-soft hover:bg-background text-slate-700 rounded-xl text-xs font-bold flex items-center space-x-1"
+                        title="Edit customer details"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="px-3 py-1.5 border border-border-soft hover:bg-background text-slate-700 rounded-xl text-xs font-bold flex items-center space-x-1"
+                        title="Print customer profile & visit history"
+                      >
+                        <Printer className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Print</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleExportCustomerHistory}
+                        className="px-3 py-1.5 border border-border-soft hover:bg-background text-slate-700 rounded-xl text-xs font-bold flex items-center space-x-1"
+                        title="Export customer history CSV"
+                      >
+                        <Download className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Export</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomerHistoryModal(false)}
+                        className="w-8 h-8 text-slate-400 hover:text-slate-600 rounded-full hover:bg-background flex items-center justify-center font-bold text-lg"
+                        title="Close History Popup (Esc)"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Modal Body & Tab Navigator */}
+                  {customerHistoryLoading ? (
+                    <div className="py-16 text-center text-xs font-bold text-slate-500 flex flex-col items-center space-y-2">
+                      <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+                      <span>Loading Customer History & Analytics...</span>
+                    </div>
+                  ) : customerHistoryError ? (
+                    <div className="p-6 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs font-semibold space-y-2">
+                      <p className="font-extrabold text-sm text-rose-800">Unable to load customer history.</p>
+                      <p>{customerHistoryError}</p>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex flex-col overflow-hidden space-y-4">
+                      {/* Tabs Row */}
+                      <div className="flex border-b border-border-soft overflow-x-auto space-x-2 scrollbar-none text-xs font-extrabold">
+                        {[
+                          { id: "overview", label: "Overview", icon: BarChart3 },
+                          { id: "visits", label: `Visit History (${visitHistory.length})`, icon: Receipt },
+                          { id: "services", label: `Services (${purchasedServices.length})`, icon: Scissors },
+                          { id: "products", label: `Products (${purchasedProducts.length})`, icon: Package },
+                          { id: "membership", label: "Membership", icon: Crown },
+                          { id: "notes", label: "Notes & Preferences", icon: FileText },
+                          { id: "timeline", label: "Timeline", icon: Clock },
+                        ].map((tab) => {
+                          const TabIcon = tab.icon;
+                          return (
+                            <button
+                              key={tab.id}
+                              type="button"
+                              onClick={() => setCustomerHistoryTab(tab.id)}
+                              className={`px-4 py-2 border-b-2 transition whitespace-nowrap flex items-center space-x-1.5 ${
+                                customerHistoryTab === tab.id
+                                  ? "border-primary text-primary"
+                                  : "border-transparent text-slate-500 hover:text-slate-800"
+                              }`}
+                            >
+                              <TabIcon className="w-3.5 h-3.5" />
+                              <span>{tab.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Tab Content Container */}
+                      <div className="flex-1 overflow-y-auto pr-1 text-xs space-y-4">
+                        {/* TAB 1: OVERVIEW */}
+                        {customerHistoryTab === "overview" && (
+                          <div className="space-y-6">
+                            {/* Metric Cards Grid */}
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                              <div className="p-4 bg-primary/5 border border-primary/20 rounded-2xl">
+                                <p className="text-[10px] font-bold uppercase text-slate-500">Total Visits</p>
+                                <p className="text-xl font-black text-slate-900 mt-1">{summary.total_visits || 0}</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Completed bills</p>
+                              </div>
+                              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                                <p className="text-[10px] font-bold uppercase text-slate-500">Total Spent</p>
+                                <p className="text-xl font-black text-emerald-700 mt-1">{formatCurrency(summary.total_amount_spent || 0)}</p>
+                                <p className="text-[10px] text-emerald-600 mt-0.5">Lifetime revenue</p>
+                              </div>
+                              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                                <p className="text-[10px] font-bold uppercase text-slate-500">Loyalty Points</p>
+                                <p className="text-xl font-black text-amber-700 mt-1 flex items-center space-x-1">
+                                  <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
+                                  <span>{summary.loyalty_points || 0}</span>
+                                </p>
+                                <p className="text-[10px] text-amber-600 mt-0.5">Available balance</p>
+                              </div>
+                              <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl">
+                                <p className="text-[10px] font-bold uppercase text-slate-500">Last Visit</p>
+                                <p className="text-sm font-black text-purple-900 mt-1">{summary.last_visit_date || "No visits yet"}</p>
+                                <p className="text-[10px] text-purple-600 mt-0.5">Stylist: {summary.preferred_stylist || "None"}</p>
+                              </div>
+                            </div>
+
+                            {/* Preferences & Favorites Banner */}
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div className="p-4 bg-background border border-border-soft rounded-2xl space-y-2">
+                                <div className="flex items-center space-x-2 font-bold text-slate-800">
+                                  <Scissors className="w-4 h-4 text-primary" />
+                                  <span>Preferred Services</span>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                  {summary.preferred_services?.length > 0 ? (
+                                    summary.preferred_services.map((svc, i) => (
+                                      <span key={i} className="bg-primary/10 text-primary font-bold px-2.5 py-1 rounded-lg text-[11px]">
+                                        {svc}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="text-slate-400 font-normal">No preference data yet</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="p-4 bg-background border border-border-soft rounded-2xl space-y-2">
+                                <div className="flex items-center space-x-2 font-bold text-slate-800">
+                                  <User className="w-4 h-4 text-primary" />
+                                  <span>Preferred Stylist</span>
+                                </div>
+                                <p className="text-sm font-extrabold text-slate-900 pt-1">
+                                  {summary.preferred_stylist || "None assigned"}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Financial Breakdown Table */}
+                            <div className="p-5 bg-surface border border-border-soft rounded-2xl space-y-3">
+                              <h4 className="font-extrabold text-slate-900 uppercase text-[11px] tracking-wider">Financial Breakdown</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
+                                <div className="p-3 bg-background rounded-xl border border-border-soft">
+                                  <span className="text-[10px] text-slate-500 block font-bold">Services Total</span>
+                                  <span className="text-xs font-black text-slate-800">{formatCurrency(financialSummary.total_services_amount || 0)}</span>
+                                </div>
+                                <div className="p-3 bg-background rounded-xl border border-border-soft">
+                                  <span className="text-[10px] text-slate-500 block font-bold">Products Total</span>
+                                  <span className="text-xs font-black text-slate-800">{formatCurrency(financialSummary.total_products_amount || 0)}</span>
+                                </div>
+                                <div className="p-3 bg-background rounded-xl border border-border-soft">
+                                  <span className="text-[10px] text-slate-500 block font-bold">Discounts Received</span>
+                                  <span className="text-xs font-black text-emerald-600">-{formatCurrency(financialSummary.total_discounts_given || 0)}</span>
+                                </div>
+                                <div className="p-3 bg-background rounded-xl border border-border-soft">
+                                  <span className="text-[10px] text-slate-500 block font-bold">Tax Paid</span>
+                                  <span className="text-xs font-black text-slate-800">{formatCurrency(financialSummary.total_tax_paid || 0)}</span>
+                                </div>
+                                <div className="p-3 bg-primary/10 rounded-xl border border-primary/20">
+                                  <span className="text-[10px] text-primary block font-bold">Grand Total</span>
+                                  <span className="text-xs font-black text-primary">{formatCurrency(financialSummary.grand_total_spent || 0)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB 2: VISIT HISTORY */}
+                        {customerHistoryTab === "visits" && (
+                          <div className="space-y-4">
+                            <div className="border border-border-soft rounded-2xl overflow-hidden shadow-2xs">
+                              <table className="w-full text-left text-xs">
+                                <thead className="bg-background border-b border-border-soft font-extrabold text-slate-600 uppercase text-[10px]">
+                                  <tr>
+                                    <th className="p-3">Bill No</th>
+                                    <th className="p-3">Date</th>
+                                    <th className="p-3">Services</th>
+                                    <th className="p-3">Products</th>
+                                    <th className="p-3">Stylists</th>
+                                    <th className="p-3 text-right">Amount</th>
+                                    <th className="p-3 text-center">Status</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border-soft font-semibold">
+                                  {visitHistory.length > 0 ? (
+                                    visitHistory.map((v) => (
+                                      <tr
+                                        key={v.id}
+                                        onClick={() => setReadOnlyInvoiceDetail(v)}
+                                        className="hover:bg-primary-light/40 cursor-pointer transition"
+                                        title="Click to view full invoice breakdown"
+                                      >
+                                        <td className="p-3 font-extrabold text-primary">{v.invoice_number}</td>
+                                        <td className="p-3 text-slate-600">{v.date}</td>
+                                        <td className="p-3 text-slate-900">{v.services?.length > 0 ? v.services.join(", ") : "-"}</td>
+                                        <td className="p-3 text-slate-900">{v.products?.length > 0 ? v.products.join(", ") : "-"}</td>
+                                        <td className="p-3 text-slate-600">{v.employees?.length > 0 ? v.employees.join(", ") : "N/A"}</td>
+                                        <td className="p-3 text-right font-black text-slate-900">{formatCurrency(v.total)}</td>
+                                        <td className="p-3 text-center">
+                                          <span
+                                            className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                              v.status === "Paid"
+                                                ? "bg-emerald-100 text-emerald-800"
+                                                : "bg-amber-100 text-amber-800"
+                                            }`}
+                                          >
+                                            {v.status}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    ))
+                                  ) : (
+                                    <tr>
+                                      <td colSpan="7" className="p-8 text-center text-slate-400 font-bold">
+                                        No previous visits recorded for this customer.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB 3: SERVICES */}
+                        {customerHistoryTab === "services" && (
+                          <div className="border border-border-soft rounded-2xl overflow-hidden shadow-2xs">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-background border-b border-border-soft font-extrabold text-slate-600 uppercase text-[10px]">
+                                <tr>
+                                  <th className="p-3">Service Name</th>
+                                  <th className="p-3 text-center">Times Taken</th>
+                                  <th className="p-3 text-right">Total Amount</th>
+                                  <th className="p-3 text-right">Last Service Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border-soft font-semibold">
+                                {purchasedServices.length > 0 ? (
+                                  purchasedServices.map((s, idx) => (
+                                    <tr key={idx} className="hover:bg-background">
+                                      <td className="p-3 font-extrabold text-slate-900">{s.name}</td>
+                                      <td className="p-3 text-center font-black text-primary">{s.times_taken}</td>
+                                      <td className="p-3 text-right font-extrabold text-slate-800">{formatCurrency(s.total_spent)}</td>
+                                      <td className="p-3 text-right text-slate-600">{s.last_taken_date}</td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan="4" className="p-8 text-center text-slate-400 font-bold">
+                                      No services purchased yet.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* TAB 4: PRODUCTS */}
+                        {customerHistoryTab === "products" && (
+                          <div className="border border-border-soft rounded-2xl overflow-hidden shadow-2xs">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-background border-b border-border-soft font-extrabold text-slate-600 uppercase text-[10px]">
+                                <tr>
+                                  <th className="p-3">Product Name</th>
+                                  <th className="p-3 text-center">Quantity Purchased</th>
+                                  <th className="p-3 text-right">Total Spent</th>
+                                  <th className="p-3 text-right">Last Purchased Date</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-border-soft font-semibold">
+                                {purchasedProducts.length > 0 ? (
+                                  purchasedProducts.map((p, idx) => (
+                                    <tr key={idx} className="hover:bg-background">
+                                      <td className="p-3 font-extrabold text-slate-900">{p.name}</td>
+                                      <td className="p-3 text-center font-black text-primary">{p.quantity_purchased}</td>
+                                      <td className="p-3 text-right font-extrabold text-slate-800">{formatCurrency(p.total_spent)}</td>
+                                      <td className="p-3 text-right text-slate-600">{p.last_purchased_date}</td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan="4" className="p-8 text-center text-slate-400 font-bold">
+                                      No products purchased yet.
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* TAB 5: MEMBERSHIP */}
+                        {customerHistoryTab === "membership" && (
+                          <div className="space-y-4">
+                            {memberships.length > 0 ? (
+                              memberships.map((m) => (
+                                <div key={m.id} className="p-5 bg-amber-50/50 border border-amber-200 rounded-2xl space-y-3">
+                                  <div className="flex justify-between items-center">
+                                    <div>
+                                      <h4 className="text-sm font-black text-amber-900 flex items-center space-x-1">
+                                        <Crown className="w-4 h-4 text-amber-800" />
+                                        <span>{m.plan_name}</span>
+                                      </h4>
+                                      <p className="text-[11px] text-amber-700 font-semibold mt-0.5">
+                                        Valid: {m.start_date} to {m.expiry_date}
+                                      </p>
+                                    </div>
+                                    <span className="px-3 py-1 bg-amber-200 text-amber-900 rounded-full text-xs font-black uppercase">
+                                      {m.status}
+                                    </span>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-amber-200">
+                                    <h5 className="font-bold text-slate-800 mb-2">Remaining Benefit Balance</h5>
+                                    <div className="grid md:grid-cols-2 gap-2">
+                                      {m.benefits?.map((b, idx) => (
+                                        <div key={idx} className="p-2.5 bg-surface border border-border-soft rounded-xl flex justify-between items-center">
+                                          <span className="font-semibold text-slate-900">{b.service_name}</span>
+                                          <span className="font-black text-primary">{b.remaining_quantity} / {b.total_quantity} left</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="p-8 text-center bg-background border border-border-soft rounded-2xl text-slate-400 font-bold">
+                                No active or past memberships assigned.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* TAB 6: NOTES & PREFERENCES */}
+                        {customerHistoryTab === "notes" && (
+                          <div className="space-y-4">
+                            <div className="p-5 bg-background border border-border-soft rounded-2xl space-y-3">
+                              <h4 className="font-extrabold text-slate-900 flex items-center space-x-2">
+                                <MessageSquare className="w-4 h-4 text-primary" />
+                                <span>Staff Remarks & Client Notes</span>
+                              </h4>
+                              <p className="text-xs font-medium text-slate-700 bg-surface p-4 rounded-xl border border-border-soft leading-relaxed">
+                                {summary.notes || "No custom notes recorded."}
+                              </p>
+                            </div>
+
+                            <div className="grid md:grid-cols-2 gap-4">
+                              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl space-y-1">
+                                <span className="text-[11px] font-bold text-rose-800 uppercase block">Allergies & Sensitivities</span>
+                                <p className="text-xs font-bold text-rose-900">{summary.allergies || "None specified"}</p>
+                              </div>
+                              <div className="p-4 bg-blue-50 border border-blue-200 rounded-2xl space-y-1">
+                                <span className="text-[11px] font-bold text-blue-800 uppercase block">Preferred Hairdresser / Stylist</span>
+                                <p className="text-xs font-bold text-blue-900">{summary.preferred_stylist || "None specified"}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB 7: TIMELINE */}
+                        {customerHistoryTab === "timeline" && (
+                          <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-border-soft">
+                            {timelineEvents.length > 0 ? (
+                              timelineEvents.map((event, idx) => (
+                                <div key={idx} className="relative space-y-1">
+                                  <div className="absolute -left-6 top-1 w-3.5 h-3.5 bg-primary rounded-full ring-4 ring-primary/20" />
+                                  <div className="flex justify-between items-center text-[11px]">
+                                    <span className="font-black text-slate-900">{event.date} • {event.time}</span>
+                                    <span className="font-bold text-primary">{event.invoice_number}</span>
+                                  </div>
+                                  <p className="text-xs font-bold text-slate-800">{event.title}</p>
+                                  <p className="text-xs text-slate-500">{event.details}</p>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="py-8 text-center text-slate-400 font-bold">
+                                No timeline activity recorded.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* READ-ONLY INVOICE DETAIL MODAL */}
+      {readOnlyInvoiceDetail && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+          <div className="bg-surface border border-border-soft rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-border-soft pb-3">
+              <div>
+                <h4 className="text-sm font-black text-slate-900">
+                  Invoice Breakdown: {readOnlyInvoiceDetail.invoice_number || "Invoice"}
+                </h4>
+                <p className="text-[11px] font-semibold text-slate-500">Date: {readOnlyInvoiceDetail.created_at || readOnlyInvoiceDetail.date || "N/A"}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReadOnlyInvoiceDetail(null)}
+                className="w-8 h-8 rounded-full hover:bg-background text-slate-400 hover:text-slate-600 flex items-center justify-center font-bold"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="border border-border-soft rounded-xl overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-background border-b border-border-soft font-extrabold text-slate-600">
+                  <tr>
+                    <th className="p-2.5">Item</th>
+                    <th className="p-2.5 text-center">Type</th>
+                    <th className="p-2.5 text-center">Qty</th>
+                    <th className="p-2.5 text-right font-black">Line Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-soft font-semibold">
+                  {readOnlyInvoiceDetail.line_items?.length > 0 ? (
+                    readOnlyInvoiceDetail.line_items.map((item, idx) => (
+                      <tr key={item.id || idx}>
+                        <td className="p-2.5 font-bold text-slate-900">{item.name}</td>
+                        <td className="p-2.5 text-center text-slate-500">{item.type}</td>
+                        <td className="p-2.5 text-center">{item.quantity}</td>
+                        <td className="p-2.5 text-right font-black text-slate-900">{formatCurrency(item.line_total || item.unit_price)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <>
+                      {readOnlyInvoiceDetail.services?.map((svc, idx) => (
+                        <tr key={`svc-${idx}`}>
+                          <td className="p-2.5 font-bold text-slate-900">{svc}</td>
+                          <td className="p-2.5 text-center text-slate-500">Service</td>
+                          <td className="p-2.5 text-center">1</td>
+                          <td className="p-2.5 text-right font-black text-slate-900">-</td>
+                        </tr>
+                      ))}
+                      {readOnlyInvoiceDetail.products?.map((prod, idx) => (
+                        <tr key={`prod-${idx}`}>
+                          <td className="p-2.5 font-bold text-slate-900">{prod}</td>
+                          <td className="p-2.5 text-center text-slate-500">Product</td>
+                          <td className="p-2.5 text-center">1</td>
+                          <td className="p-2.5 text-right font-black text-slate-900">-</td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-2 border-t border-border-soft flex justify-between items-center text-xs font-black text-slate-900">
+              <span>Status: <span className="text-emerald-600">{readOnlyInvoiceDetail.status || "Paid"}</span></span>
+              <span className="text-base text-primary font-black">Total: {formatCurrency(readOnlyInvoiceDetail.total || readOnlyInvoiceDetail.grand_total || 0)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PERSISTENT OFF-SCREEN THERMAL RECEIPT MOUNT FOR 100% RELIABLE PRINTING */}
+      <div style={{ position: "absolute", left: "-9999px", top: "0", opacity: "0", pointerEvents: "none" }}>
+        <ThermalReceipt
+          ref={printReceiptRef}
+          invoice={activePrintInvoice || invoiceResult || selectedInvoiceDetail}
+          settings={receiptSettings}
+          businessProfile={businessProfile}
+        />
+      </div>
     </div>
   );
 }

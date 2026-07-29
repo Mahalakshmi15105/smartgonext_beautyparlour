@@ -1,7 +1,15 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
+import { User, X } from "lucide-react";
 
 function CustomerMemberships() {
+  const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
+  const assignModalRef = useRef(null);
+  const assignFormRef = useRef(null);
+  const upgradeModalRef = useRef(null);
+
   const [customers, setCustomers] = useState([]);
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
@@ -26,15 +34,26 @@ function CustomerMemberships() {
   const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const [allCustomers, setAllCustomers] = useState([]);
+  const [modalCustomerSearch, setModalCustomerSearch] = useState("");
+
+  useModalFocusTrap(showAssignModal, assignModalRef, () => setShowAssignModal(false));
+  useModalFocusTrap(showUpgradeModal, upgradeModalRef, () => setShowUpgradeModal(false));
+  useFormKeyboardNavigation(assignFormRef, () => {
+    const submitBtn = assignModalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
+  });
+
   useEffect(() => {
-    API.get("/membership-plans?status=active").then((res) => setPlans(res.data.items));
-    API.get("/services?status=active").then((res) => setServices(res.data.items));
+    API.get("/membership-plans?status=active").then((res) => setPlans(res.data.items || []));
+    API.get("/services?status=active").then((res) => setServices(res.data.items || []));
+    API.get("/customers?limit=100").then((res) => setAllCustomers(res.data.items || []));
   }, []);
 
   // Customer Autocomplete Lookup
   useEffect(() => {
     if (customerSearch.trim().length >= 2) {
-      API.get(`/customers?q=${customerSearch}`).then((res) => setCustomers(res.data.items));
+      API.get(`/customers?q=${customerSearch}`).then((res) => setCustomers(res.data.items || []));
     } else {
       setCustomers([]);
     }
@@ -163,8 +182,9 @@ function CustomerMemberships() {
         <label className="block text-xs font-semibold text-text-secondary">Select Customer to View Active Packages</label>
         {selectedCustomer ? (
           <div className="flex justify-between items-center bg-primary-light border border-primary/20 px-4 py-2.5 rounded-lg">
-            <span className="text-sm font-semibold text-primary">
-              👤 {selectedCustomer.first_name} {selectedCustomer.last_name || ""} ({selectedCustomer.phone})
+            <span className="text-sm font-semibold text-primary flex items-center space-x-1.5">
+              <User className="w-4 h-4 text-primary" />
+              <span>{selectedCustomer.first_name} {selectedCustomer.last_name || ""} ({selectedCustomer.phone})</span>
             </span>
             <button
               onClick={() => {
@@ -299,33 +319,43 @@ function CustomerMemberships() {
       {/* Assign Membership Modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={assignModalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Assign Customer Membership</h3>
               <button onClick={() => setShowAssignModal(false)} className="text-text-secondary hover:text-text-primary">
                 ✖
               </button>
             </div>
-            <form onSubmit={handleAssignSubmit} className="p-6 space-y-4">
+            <form ref={assignFormRef} onSubmit={handleAssignSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Select Customer *</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">Search & Select Customer *</label>
+                <input
+                  type="text"
+                  placeholder="Filter dropdown by customer name or phone..."
+                  value={modalCustomerSearch}
+                  onChange={(e) => setModalCustomerSearch(e.target.value)}
+                  className="w-full bg-background border border-border-soft px-3 py-1.5 rounded-lg text-xs mb-2 focus:outline-none focus:border-primary"
+                />
                 <select
                   required
                   value={assignForm.customer_id}
                   onChange={(e) => setAssignForm({ ...assignForm, customer_id: e.target.value })}
                   className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
                 >
-                  <option value="">Choose Customer</option>
-                  {selectedCustomer && (
-                    <option value={selectedCustomer.id}>
-                      {selectedCustomer.first_name} ({selectedCustomer.phone})
-                    </option>
-                  )}
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.first_name} ({c.phone})
-                    </option>
-                  ))}
+                  <option value="">-- Choose Active Customer --</option>
+                  {allCustomers
+                    .filter(
+                      (c) =>
+                        !modalCustomerSearch ||
+                        `${c.first_name} ${c.last_name || ""} ${c.phone}`
+                          .toLowerCase()
+                          .includes(modalCustomerSearch.toLowerCase())
+                    )
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.first_name} {c.last_name || ""} ({c.phone || "No Phone"})
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -339,7 +369,7 @@ function CustomerMemberships() {
                 >
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} - INR {p.price} ({p.duration_days} Days)
+                      {p.name} - {formatCurrency(p.price)} ({p.duration_days} Days)
                     </option>
                   ))}
                 </select>
@@ -380,19 +410,20 @@ function CustomerMemberships() {
                 ))}
               </div>
 
-              <div className="pt-4 border-t border-border-soft flex justify-end space-x-3">
+              <div className="pt-2 border-t border-border-soft flex justify-end space-x-3">
                 <button
                   type="button"
                   onClick={() => setShowAssignModal(false)}
-                  className="px-4 py-2 border border-border-soft rounded-lg text-sm text-text-secondary hover:bg-background"
+                  className="px-4 py-2 border border-border-soft rounded-md text-xs font-semibold text-text-secondary hover:bg-background"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-semibold shadow-xs disabled:opacity-50"
                 >
-                  Assign Package
+                  {submitting ? "Assigning..." : "Assign Plan"}
                 </button>
               </div>
             </form>
@@ -406,8 +437,8 @@ function CustomerMemberships() {
           <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Upgrade Membership Tier</h3>
-              <button onClick={() => setShowUpgradeModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <button onClick={() => setShowUpgradeModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleUpgradeSubmit} className="p-6 space-y-4">
@@ -421,7 +452,7 @@ function CustomerMemberships() {
                 >
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} - INR {p.price} ({p.duration_days} Days)
+                      {p.name} - {formatCurrency(p.price)} ({p.duration_days} Days)
                     </option>
                   ))}
                 </select>

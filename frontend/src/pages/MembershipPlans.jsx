@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
+import { X } from "lucide-react";
 
 function MembershipPlans() {
+  const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
+  const modalRef = useRef(null);
+  const formRef = useRef(null);
+
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -24,6 +31,12 @@ function MembershipPlans() {
     service_discount_percentage: "0",
     product_discount_percentage: "0",
     status: "active",
+  });
+
+  useModalFocusTrap(showModal, modalRef, () => setShowModal(false));
+  useFormKeyboardNavigation(formRef, () => {
+    const submitBtn = modalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
   });
 
   const fetchPlans = (currentCursor = null) => {
@@ -196,7 +209,7 @@ function MembershipPlans() {
                         {p.description && <p className="text-xs text-text-secondary">{p.description}</p>}
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-text-secondary">INR {p.price}</td>
+                    <td className="px-6 py-4 text-sm text-text-secondary">{formatCurrency(p.price)}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{p.duration_days} Days</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{p.service_discount_percentage}%</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{p.product_discount_percentage}%</td>
@@ -244,16 +257,16 @@ function MembershipPlans() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={modalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">
                 {editId ? "Edit Membership Plan" : "Create Membership Plan"}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">Plan Name *</label>
                 <input
@@ -279,7 +292,7 @@ function MembershipPlans() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Price (INR) *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Price ({currencySymbol}) *</label>
                   <input
                     type="number"
                     step="0.01"

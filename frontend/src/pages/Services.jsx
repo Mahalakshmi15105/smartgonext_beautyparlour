@@ -1,7 +1,16 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
+import { X } from "lucide-react";
 
 function Services() {
+  const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
+  const serviceModalRef = useRef(null);
+  const serviceFormRef = useRef(null);
+  const categoryModalRef = useRef(null);
+  const categoryFormRef = useRef(null);
+
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,23 +39,34 @@ function Services() {
     status: "active",
   });
 
+  useModalFocusTrap(showServiceModal, serviceModalRef, () => setShowServiceModal(false));
+  useModalFocusTrap(showCategoryModal, categoryModalRef, () => setShowCategoryModal(false));
+  useFormKeyboardNavigation(serviceFormRef, () => {
+    const submitBtn = serviceModalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
+  });
+  useFormKeyboardNavigation(categoryFormRef, () => {
+    const submitBtn = categoryModalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
+  });
+
   const fetchCategories = () => {
     API.get("/service-categories")
-      .then((res) => setCategories(res.data))
+      .then((res) => setCategories(res.data || []))
       .catch((err) => console.error("Error loading categories", err));
   };
 
   const fetchServices = (currentCursor = null) => {
     setLoading(true);
-    let url = `/services?limit=10`;
+    let url = `/services?limit=100`;
     if (currentCursor) url += `&cursor=${currentCursor}`;
     if (search) url += `&q=${search}`;
     if (categoryId) url += `&category_id=${categoryId}`;
 
     API.get(url)
       .then((res) => {
-        setServices(res.data.items);
-        setNextCursor(res.data.next_cursor);
+        setServices(res.data?.items || []);
+        setNextCursor(res.data?.next_cursor || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -235,7 +255,7 @@ function Services() {
                     <td className="px-6 py-4 text-sm font-medium text-text-primary">{s.name}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{s.category_name || "-"}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{s.duration_minutes} mins</td>
-                    <td className="px-6 py-4 text-sm text-text-secondary">INR {s.price}</td>
+                    <td className="px-6 py-4 text-sm text-text-secondary">{formatCurrency(s.price)}</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                         s.status === "active" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
@@ -280,16 +300,16 @@ function Services() {
       {/* Service Modal */}
       {showServiceModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={serviceModalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">
                 {editId ? "Edit Service" : "Add New Service"}
               </h3>
-              <button onClick={() => setShowServiceModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <button onClick={() => setShowServiceModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleServiceSubmit} className="p-6 space-y-4">
+            <form ref={serviceFormRef} onSubmit={handleServiceSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">Service Name *</label>
                 <input
@@ -331,7 +351,7 @@ function Services() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Price (INR) *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Price ({currencySymbol}) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -386,7 +406,7 @@ function Services() {
       {/* Category Management Modal */}
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-md w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={categoryModalRef} className="bg-surface max-w-md w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Manage Service Categories</h3>
               <button onClick={() => setShowCategoryModal(false)} className="text-text-secondary hover:text-text-primary">
@@ -395,7 +415,7 @@ function Services() {
             </div>
             <div className="p-6 space-y-6">
               {/* Add New Category form */}
-              <form onSubmit={handleCategorySubmit} className="flex space-x-3">
+              <form ref={categoryFormRef} onSubmit={handleCategorySubmit} className="flex space-x-3">
                 <input
                   type="text"
                   required

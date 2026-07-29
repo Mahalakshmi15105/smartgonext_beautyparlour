@@ -94,8 +94,8 @@ function LandingPage({ onNavigateLogin, onNavigateRegister }) {
           </button>
         </div>
 
-        {/* Feature Badges */}
-        <div className="pt-8 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-3xl mx-auto text-xs font-semibold text-slate-600">
+        {/* Feature Pills */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 text-xs font-bold text-slate-700 max-w-3xl mx-auto">
           <div className="bg-white/80 border border-pink-100 py-3 px-4 rounded-xl shadow-xs flex items-center justify-center space-x-2">
             <Scissors className="w-4 h-4 text-pink-600" />
             <span>Stylist Commissions</span>
@@ -153,125 +153,93 @@ function LandingPage({ onNavigateLogin, onNavigateRegister }) {
                 Assign stylists to treatment line items during checkout and automatically compute accurate commission payouts.
               </p>
             </div>
-
-            <div className="bg-gradient-to-br from-white to-pink-50/50 border border-pink-100 p-8 rounded-2xl space-y-4 hover:-translate-y-1 hover:shadow-xl hover:border-pink-300 transition duration-300">
-              <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-xl shadow-sm">
-                <Package className="w-6 h-6 text-pink-600" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900">Retail Inventory Alerts</h3>
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Real-time stock tracking with automated reorder warnings when retail shampoo, creams, or products drop below threshold.
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-white to-pink-50/50 border border-pink-100 p-8 rounded-2xl space-y-4 hover:-translate-y-1 hover:shadow-xl hover:border-pink-300 transition duration-300">
-              <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-xl shadow-sm">
-                <BarChart3 className="w-6 h-6 text-pink-600" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900">Real-Time Business Analytics</h3>
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Interactive charts and real-time metrics for Today's Sales, MRR/ARR, top treatments, and payment distribution.
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-white to-pink-50/50 border border-pink-100 p-8 rounded-2xl space-y-4 hover:-translate-y-1 hover:shadow-xl hover:border-pink-300 transition duration-300">
-              <div className="w-12 h-12 rounded-xl bg-pink-100 text-pink-600 flex items-center justify-center font-bold text-xl shadow-sm">
-                <Download className="w-6 h-6 text-pink-600" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900">Tax Reports & CSV Exports</h3>
-              <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                Filterable financial ledgers and instant one-click CSV data exports for accounting and GST/VAT tax filings.
-              </p>
-            </div>
           </div>
         </div>
       </section>
 
-      {/* SaaS Pricing Plans Section */}
+      {/* Pricing Cards */}
       <section id="pricing" className="px-6 lg:px-12 py-20 max-w-6xl mx-auto w-full space-y-12">
-        <div className="text-center space-y-3">
-          <h2 className="text-xs uppercase font-extrabold tracking-widest text-pink-600">Simple & Transparent Pricing</h2>
-          <p className="text-3xl font-extrabold text-slate-900">Choose the Plan That Fits Your Salon</p>
-          
-          <div className="flex justify-center items-center space-x-3 pt-4">
-            <span className={`text-xs font-bold ${billingCycle === "monthly" ? "text-pink-600" : "text-slate-500"}`}>Monthly</span>
+        <div className="text-center space-y-4">
+          <h2 className="text-xs uppercase font-extrabold tracking-widest text-pink-600">Transparent Pricing</h2>
+          <p className="text-3xl font-extrabold text-slate-900">Choose the Perfect Plan for Your Parlour</p>
+          <div className="flex justify-center items-center space-x-3 pt-2">
             <button
-              onClick={() => setBillingCycle(billingCycle === "monthly" ? "yearly" : "monthly")}
-              className="w-12 h-6 bg-pink-100 border border-pink-200 rounded-full p-1 transition flex items-center"
+              onClick={() => setBillingCycle("monthly")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                billingCycle === "monthly" ? "bg-pink-600 text-white" : "bg-pink-50 text-slate-600"
+              }`}
             >
-              <div className={`w-4 h-4 bg-pink-600 rounded-full transition transform ${billingCycle === "yearly" ? "translate-x-6" : ""}`}></div>
+              Monthly Billing
             </button>
-            <span className={`text-xs font-bold ${billingCycle === "yearly" ? "text-pink-600" : "text-slate-500"}`}>
-              Yearly <span className="bg-amber-100 text-amber-700 text-[10px] px-2.5 py-0.5 rounded-full font-extrabold ml-1 border border-amber-300">Save 20%</span>
-            </span>
+            <button
+              onClick={() => setBillingCycle("yearly")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+                billingCycle === "yearly" ? "bg-pink-600 text-white" : "bg-pink-50 text-slate-600"
+              }`}
+            >
+              Yearly Billing (Save 20%)
+            </button>
           </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
-          {/* Basic Plan */}
-          <div className="bg-white border border-pink-100 p-8 rounded-3xl space-y-6 flex flex-col justify-between hover:shadow-xl transition duration-300">
+          <div className="bg-white border border-pink-100 p-8 rounded-3xl space-y-6 shadow-sm flex flex-col justify-between hover:border-pink-300 transition duration-300">
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Basic Plan</h3>
-              <p className="text-xs text-slate-500 font-medium">Perfect for boutique salons & individual artists.</p>
-              <div className="text-4xl font-black text-slate-900">
+              <span className="text-xs font-bold text-pink-600 uppercase tracking-wide bg-pink-50 px-3 py-1 rounded-full">Starter Salon</span>
+              <h3 className="text-2xl font-extrabold text-slate-900">
                 INR {billingCycle === "monthly" ? "999" : "799"} <span className="text-xs font-normal text-slate-500">/ mo</span>
-              </div>
+              </h3>
+              <p className="text-xs text-slate-600">Essential POS checkout and appointment management for growing boutique salons.</p>
               <ul className="text-xs text-slate-600 space-y-3 pt-4 border-t border-pink-100 font-medium">
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Up to 3 Stylist Accounts</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>20 Service Treatments</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>POS Checkout Billing</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Standard Analytics</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Up to 2 Stylists</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>POS Billing & Receipts</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Basic Sales Analytics</span></li>
               </ul>
             </div>
             <button
               onClick={onNavigateRegister}
               className="w-full bg-pink-50 hover:bg-pink-100 border border-pink-200 text-pink-600 py-3 rounded-xl text-xs font-bold transition duration-200"
             >
-              Get Started Basic
+              Get Started
             </button>
           </div>
 
-          {/* Pro Plan (Featured) */}
-          <div className="bg-gradient-to-b from-pink-50/70 via-white to-pink-50/30 border-2 border-pink-500 p-8 rounded-3xl space-y-6 flex flex-col justify-between relative shadow-2xl shadow-pink-500/15">
-            <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-pink-600 to-rose-500 text-white text-[10px] font-extrabold uppercase tracking-widest px-4 py-1 rounded-full shadow-sm flex items-center space-x-1">
-              <Sparkles className="w-3 h-3 text-white" />
-              <span>Most Popular</span>
+          <div className="bg-gradient-to-b from-slate-900 to-slate-800 text-white p-8 rounded-3xl space-y-6 shadow-2xl relative flex flex-col justify-between transform md:-translate-y-2 border-2 border-pink-500">
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-pink-600 text-white px-3 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider">
+              Most Popular
             </div>
-            <div className="space-y-4 pt-2">
-              <h3 className="text-base font-bold text-slate-900">Pro Plan</h3>
-              <p className="text-xs text-slate-500 font-medium">Ideal for growing salons & multi-stylists.</p>
-              <div className="text-4xl font-black text-pink-600">
-                INR {billingCycle === "monthly" ? "1,999" : "1,599"} <span className="text-xs font-normal text-slate-500">/ mo</span>
-              </div>
-              <ul className="text-xs text-slate-600 space-y-3 pt-4 border-t border-pink-200/60 font-semibold">
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-600 font-bold" /><span>Up to 10 Stylist Accounts</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-600 font-bold" /><span>Unlimited Treatments & Products</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-600 font-bold" /><span>Full Membership Management</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-600 font-bold" /><span>Commission Payout Reports</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-600 font-bold" /><span>CSV Data Exports</span></li>
+            <div className="space-y-4">
+              <span className="text-xs font-bold text-pink-400 uppercase tracking-wide bg-slate-800 px-3 py-1 rounded-full border border-slate-700">Pro Parlour</span>
+              <h3 className="text-2xl font-extrabold text-white">
+                INR {billingCycle === "monthly" ? "1,999" : "1,599"} <span className="text-xs font-normal text-slate-400">/ mo</span>
+              </h3>
+              <p className="text-xs text-slate-300">Complete suite for high-volume beauty salons and chains.</p>
+              <ul className="text-xs text-slate-300 space-y-3 pt-4 border-t border-slate-700 font-medium">
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-400 font-bold" /><span>Unlimited Stylists</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-400 font-bold" /><span>Client VIP Memberships</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-400 font-bold" /><span>Commission & Split Payments</span></li>
+                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-400 font-bold" /><span>Inventory Stock Warnings</span></li>
               </ul>
             </div>
             <button
               onClick={onNavigateRegister}
-              className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white py-3.5 rounded-xl text-xs font-extrabold shadow-lg shadow-pink-500/25 transition duration-200"
+              className="w-full bg-gradient-to-r from-pink-600 to-rose-500 hover:from-pink-700 hover:to-rose-600 text-white py-3 rounded-xl text-xs font-bold shadow-lg shadow-pink-500/30 transition duration-200"
             >
-              Start Pro Free Trial
+              Start Free Trial Now
             </button>
           </div>
 
-          {/* Enterprise Plan */}
-          <div className="bg-white border border-pink-100 p-8 rounded-3xl space-y-6 flex flex-col justify-between hover:shadow-xl transition duration-300">
+          <div className="bg-white border border-pink-100 p-8 rounded-3xl space-y-6 shadow-sm flex flex-col justify-between hover:border-pink-300 transition duration-300">
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-slate-900">Enterprise Plan</h3>
-              <p className="text-xs text-slate-500 font-medium">For salon chains & high-volume franchises.</p>
-              <div className="text-4xl font-black text-slate-900">
+              <span className="text-xs font-bold text-pink-600 uppercase tracking-wide bg-pink-50 px-3 py-1 rounded-full">Enterprise Chain</span>
+              <h3 className="text-2xl font-extrabold text-slate-900">
                 INR {billingCycle === "monthly" ? "3,999" : "3,199"} <span className="text-xs font-normal text-slate-500">/ mo</span>
-              </div>
+              </h3>
+              <p className="text-xs text-slate-600">Multi-location salon chains with central management controls.</p>
               <ul className="text-xs text-slate-600 space-y-3 pt-4 border-t border-pink-100 font-medium">
                 <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Unlimited Everything</span></li>
                 <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Priority Customer Support</span></li>
                 <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Custom Tax & Receipt Templates</span></li>
-                <li className="flex items-center space-x-2"><Check className="w-4 h-4 text-pink-500 font-bold" /><span>Executive Super Admin Controls</span></li>
               </ul>
             </div>
             <button

@@ -65,13 +65,29 @@ def login():
         "token": access_token,
         "refresh_token": refresh_token,
         "expires_in": 7200,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "role": user.role,
-            "parlour_id": user.tenant_id
-        }
+        "user": build_user_payload(user)
     })
+
+
+def build_user_payload(user):
+    owner_name = None
+    parlour_name = None
+    if user.tenant:
+        parlour_name = user.tenant.name
+        if user.tenant.settings and user.tenant.settings.owner_name:
+            owner_name = user.tenant.settings.owner_name
+
+    if not owner_name:
+        owner_name = user.email.split("@")[0].replace(".", " ").title()
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "role": user.role,
+        "parlour_id": user.tenant_id,
+        "owner_name": owner_name,
+        "parlour_name": parlour_name or "SmartGoNext Beauty Parlour"
+    }
 
 
 @auth_bp.route("/auth/refresh", methods=["POST"])
@@ -100,12 +116,7 @@ def get_me():
             message="User profile not found.",
             status_code=404
         )
-    return success_response({
-        "id": user.id,
-        "email": user.email,
-        "role": user.role,
-        "parlour_id": user.tenant_id
-    })
+    return success_response(build_user_payload(user))
 
 
 @auth_bp.route("/auth/logout", methods=["POST"])

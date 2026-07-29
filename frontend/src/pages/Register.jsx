@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import API from "../services/api";
+import { useFormKeyboardNavigation } from "../utils/keyboardNavigation";
 
 function Register({ onRegisterSuccess, onNavigateLogin, onNavigateHome }) {
+  const formRef = useRef(null);
   const [formData, setFormData] = useState({
     parlour_name: "",
     owner_name: "",
@@ -13,7 +15,7 @@ function Register({ onRegisterSuccess, onNavigateLogin, onNavigateHome }) {
   const [error, setError] = useState(null);
 
   const handleSubmit = (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     setLoading(true);
     setError(null);
 
@@ -29,6 +31,8 @@ function Register({ onRegisterSuccess, onNavigateLogin, onNavigateHome }) {
         setError(err.message || "Registration failed. Please try again.");
       });
   };
+
+  useFormKeyboardNavigation(formRef, handleSubmit);
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center items-center p-6 font-sans">
@@ -47,7 +51,7 @@ function Register({ onRegisterSuccess, onNavigateLogin, onNavigateHome }) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-text-secondary mb-1">Beauty Parlour Name *</label>
             <input

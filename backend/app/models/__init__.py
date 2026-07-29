@@ -6,6 +6,7 @@ from app.models.employee import Employee
 from app.models.membership import MembershipPlan, CustomerMembership, MembershipBenefit
 from app.models.billing import Invoice, InvoiceLineItem, InvoicePayment
 from app.models.audit import AuditLog
+from app.models.notification import Notification
 
 __all__ = [
     "SubscriptionPlan",
@@ -23,5 +24,6 @@ __all__ = [
     "Invoice",
     "InvoiceLineItem",
     "InvoicePayment",
-    "AuditLog"
+    "AuditLog",
+    "Notification"
 ]

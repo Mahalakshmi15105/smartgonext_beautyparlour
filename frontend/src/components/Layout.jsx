@@ -1,95 +1,327 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Receipt,
   Users,
   UserCheck,
   Scissors,
-  Package,
   Award,
-  CreditCard,
   BarChart3,
   Settings as SettingsIcon,
   ShieldCheck,
   Globe,
   LogOut,
   Sparkles,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Bell,
+  RotateCw,
+  CalendarClock,
+  UserRoundX,
+  Building2,
+  X,
 } from "lucide-react";
+import API from "../services/api";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { getFullImageUrl } from "../utils/imageUrl";
 
 const getMenuIcon = (id) => {
   switch (id) {
     case "dashboard":
-      return <LayoutDashboard className="w-4 h-4" />;
+      return <LayoutDashboard className="w-4 h-4 shrink-0" />;
     case "billing":
-      return <Receipt className="w-4 h-4" />;
+      return <Receipt className="w-4 h-4 shrink-0" />;
     case "customers":
-      return <Users className="w-4 h-4" />;
+      return <Users className="w-4 h-4 shrink-0" />;
     case "employees":
-      return <UserCheck className="w-4 h-4" />;
+      return <UserCheck className="w-4 h-4 shrink-0" />;
     case "services":
-      return <Scissors className="w-4 h-4" />;
     case "products":
-      return <Package className="w-4 h-4" />;
+    case "catalog":
+      return <Scissors className="w-4 h-4 shrink-0" />;
     case "membership_plans":
-      return <Award className="w-4 h-4" />;
     case "customer_memberships":
-      return <CreditCard className="w-4 h-4" />;
+    case "memberships":
+      return <Award className="w-4 h-4 shrink-0" />;
+    case "notifications":
+      return <Bell className="w-4 h-4 shrink-0" />;
     case "reports":
-      return <BarChart3 className="w-4 h-4" />;
+      return <BarChart3 className="w-4 h-4 shrink-0" />;
     case "settings":
-      return <SettingsIcon className="w-4 h-4" />;
+      return <SettingsIcon className="w-4 h-4 shrink-0" />;
     case "super_admin":
-      return <ShieldCheck className="w-4 h-4" />;
+      return <ShieldCheck className="w-4 h-4 shrink-0" />;
     default:
       return null;
   }
 };
 
-function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome }) {
+function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, user }) {
+  const { t } = useLanguageCurrency();
+
+  // Desktop Collapsed State from localStorage
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem("sidebar_collapsed");
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch (e) {
+      return false;
+    }
+  });
+
+  // Mobile Drawer Overlay State
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const toggleSidebar = () => {
+    if (window.innerWidth < 768) {
+      setIsMobileOpen((prev) => !prev);
+    } else {
+      setIsCollapsed((prev) => {
+        const next = !prev;
+        try {
+          localStorage.setItem("sidebar_collapsed", JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+    }
+  };
+
+  // Parlour Branding & Logo State
+  const [logoUrl, setLogoUrl] = useState("");
+  const [parlourName, setParlourName] = useState("");
+
+  const fetchBranding = () => {
+    API.get("/settings")
+      .then((res) => {
+        const biz = res.data.business_profile || {};
+        const fullUrl = getFullImageUrl(biz.logo_url);
+        setLogoUrl(fullUrl);
+        setParlourName(biz.name || user?.parlour_name || "Beauty Parlour");
+        if (fullUrl) {
+          localStorage.setItem("parlour_logo_url", fullUrl);
+        } else {
+          localStorage.removeItem("parlour_logo_url");
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchBranding();
+    const interval = setInterval(fetchBranding, 10000); // 10s sync
+    return () => clearInterval(interval);
+  }, []);
+
+  // Notification Dropdown State & Unread Polling
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [recentNotifs, setRecentNotifs] = useState([]);
+  const notifDropdownRef = React.useRef(null);
+
+  const fetchUnreadNotifications = () => {
+    API.get("/notifications?limit=10")
+      .then((res) => {
+        const data = res.data.data || res.data;
+        setUnreadNotifCount(data.unread_count || 0);
+        setRecentNotifs(data.items || []);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchUnreadNotifications();
+    const interval = setInterval(fetchUnreadNotifications, 30000); // 30 sec poll
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutsideNotif = (e) => {
+      if (notifDropdownRef.current && !notifDropdownRef.current.contains(e.target)) {
+        setNotifDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutsideNotif);
+    return () => document.removeEventListener("mousedown", handleClickOutsideNotif);
+  }, []);
+
+  // Close Mobile Drawer on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && isMobileOpen) {
+        setIsMobileOpen(false);
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isMobileOpen]);
+
   const menuItems = [
-    { id: "dashboard", label: "Dashboard" },
-    { id: "billing", label: "Billing" },
-    { id: "customers", label: "Customers" },
-    { id: "employees", label: "Employees" },
-    { id: "services", label: "Services" },
-    { id: "products", label: "Products" },
-    { id: "membership_plans", label: "Membership Plans" },
-    { id: "customer_memberships", label: "Customer Memberships" },
-    { id: "reports", label: "Reports" },
-    { id: "settings", label: "Settings" },
+    { id: "dashboard", labelKey: "dashboard", defaultLabel: "Dashboard" },
+    { id: "billing", labelKey: "billing", defaultLabel: "Billing" },
+    { id: "customers", labelKey: "customers", defaultLabel: "Customers" },
+    { id: "employees", labelKey: "employees", defaultLabel: "Employees" },
+    { id: "catalog", labelKey: "services_products", defaultLabel: "Services & Products" },
+    { id: "memberships", labelKey: "membership_management", defaultLabel: "Membership Management" },
+    { id: "notifications", labelKey: "notifications", defaultLabel: "Notifications" },
+    { id: "reports", labelKey: "reports", defaultLabel: "Reports" },
+    { id: "settings", labelKey: "settings", defaultLabel: "Settings" },
   ];
 
   return (
     <div className="flex h-screen bg-background overflow-hidden font-sans">
-      {/* Sidebar */}
-      <aside className="w-64 bg-surface border-r border-border-soft flex flex-col">
+      {/* MOBILE OVERLAY BACKDROP */}
+      {isMobileOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 z-40 md:hidden backdrop-blur-xs transition-opacity duration-300"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR COMPONENT (DESKTOP + MOBILE DRAWER) */}
+      <aside
+        className={`bg-surface border-r border-border-soft flex flex-col z-50 transition-all duration-300 ease-in-out ${
+          // Desktop behavior
+          `hidden md:flex ${isCollapsed ? "w-20" : "w-64"}`
+        }`}
+      >
+        {/* Sidebar Header / Logo */}
+        <div className={`py-3.5 border-b border-border-soft flex items-center ${isCollapsed ? "justify-center px-2" : "px-5 justify-between"}`}>
+          {isCollapsed ? (
+            <div className="relative group cursor-pointer" onClick={onNavigateHome}>
+              <div className="h-10 w-10 bg-primary-light border border-primary/20 rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <Building2 className="w-5 h-5 text-primary" />
+                )}
+              </div>
+
+              {/* Hover Tooltip for Collapsed Sidebar */}
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-2 bg-slate-900 text-white rounded-xl shadow-2xl z-50 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs">
+                <p className="font-extrabold text-white">{parlourName || user?.parlour_name || "Beauty Parlour"}</p>
+                <p className="text-[10px] text-primary font-bold">Powered by SmartGoNext</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-3 cursor-pointer w-full" onClick={onNavigateHome}>
+              <div className="h-11 w-11 bg-primary-light border border-primary/20 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt="Logo"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <div className="h-full w-full bg-primary flex items-center justify-center text-white font-extrabold text-lg">
+                    {parlourName ? parlourName.charAt(0).toUpperCase() : "S"}
+                  </div>
+                )}
+              </div>
+              <div className="overflow-hidden">
+                <span className="font-black text-text-primary text-sm tracking-tight block truncate">
+                  {parlourName || user?.parlour_name || "Beauty Parlour"}
+                </span>
+                <span className="text-[10px] text-primary font-bold uppercase tracking-widest block -mt-0.5">
+                  SmartGoNext SaaS
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Toggle Expand/Collapse Button */}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="hidden md:flex p-1.5 rounded-xl hover:bg-background text-text-secondary hover:text-text-primary border border-border-soft transition shrink-0"
+            title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </button>
+        </div>
+
+        {/* Navigation Items */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          {menuItems.map((item) => {
+            const isActive = activeTab === item.id;
+            return (
+              <div key={item.id} className="relative group">
+                <button
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center ${
+                    isCollapsed ? "justify-center px-2 py-3" : "space-x-3 px-3.5 py-2.5"
+                  } rounded-xl text-xs font-semibold transition-all ${
+                    isActive
+                      ? "bg-primary text-white shadow-md"
+                      : "text-text-secondary hover:bg-primary-light hover:text-primary"
+                  }`}
+                >
+                  <span>{getMenuIcon(item.id)}</span>
+                  {!isCollapsed && <span>{t(item.labelKey)}</span>}
+                </button>
+
+                {/* Collapsed Tooltip */}
+                {isCollapsed && (
+                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-slate-900 text-white rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold">
+                    {t(item.labelKey)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {/* Mobile Drawer */}
+      <div
+        className={`fixed inset-y-0 left-0 w-64 bg-surface border-r border-border-soft z-50 transform transition-transform duration-300 md:hidden flex flex-col ${
+          isMobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="h-16 px-6 border-b border-border-soft flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={onNavigateHome}>
-            <div className="h-9 w-9 bg-gradient-to-tr from-pink-600 to-rose-400 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md shadow-pink-500/20">
+            <div className="h-9 w-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
             <div>
-              <span className="font-extrabold bg-gradient-to-r from-pink-600 to-rose-500 bg-clip-text text-transparent text-sm block">SmartGoNext</span>
-              <span className="text-[10px] text-pink-600 font-bold uppercase tracking-wider block -mt-1">Beauty Parlour</span>
+              <span className="font-extrabold text-primary text-sm block">SmartGoNext</span>
+              <span className="text-[10px] text-primary font-bold uppercase tracking-wider block -mt-1">Beauty Parlour</span>
             </div>
           </div>
+          <button onClick={() => setIsMobileOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
           {menuItems.map((item) => {
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsMobileOpen(false);
+                }}
                 className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                   isActive
-                    ? "bg-primary text-white shadow-md shadow-pink-500/20"
+                    ? "bg-primary text-white shadow-md"
                     : "text-text-secondary hover:bg-primary-light hover:text-primary"
                 }`}
               >
                 <span>{getMenuIcon(item.id)}</span>
-                <span>{item.label}</span>
+                <span>{t(item.labelKey)}</span>
               </button>
             );
           })}
@@ -98,34 +330,161 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome })
         <div className="p-4 border-t border-border-soft flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 bg-primary-light text-primary font-bold rounded-full flex items-center justify-center text-xs">
-              A
+              {(user?.owner_name || user?.email || "O")[0].toUpperCase()}
             </div>
-            <div>
-              <p className="text-xs font-bold text-text-primary">Admin Account</p>
-              <p className="text-[10px] text-text-secondary">Logged in</p>
+            <div className="max-w-[110px] truncate">
+              <p className="text-xs font-extrabold text-text-primary truncate">
+                {user?.owner_name || (user?.email ? user.email.split("@")[0] : "Salon Owner")}
+              </p>
+              <p className="text-[10px] text-text-secondary font-medium truncate">
+                {user?.parlour_name ? `${user.parlour_name} ${t("salon_owner")}` : user?.role === "SuperAdmin" ? "SaaS Admin" : t("salon_owner")}
+              </p>
             </div>
           </div>
-          <button 
-            onClick={onLogout}
-            className="flex items-center space-x-1 text-xs text-danger font-semibold hover:underline"
-          >
+          <button onClick={onLogout} className="flex items-center space-x-1 text-xs text-danger font-semibold hover:underline">
             <LogOut className="w-3.5 h-3.5" />
-            <span>Logout</span>
+            <span>{t("logout")}</span>
           </button>
         </div>
-      </aside>
+      </div>
 
-      {/* Main Workspace */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-16 bg-surface border-b border-border-soft px-8 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-text-primary uppercase tracking-wide">
-            {menuItems.find((x) => x.id === activeTab)?.label || activeTab}
-          </h2>
-          <div className="flex items-center space-x-4">
+      {/* MAIN WORKSPACE CANVAS */}
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* HEADER BAR WITH HAMBURGER BUTTON */}
+        <header className="h-16 bg-surface border-b border-border-soft px-4 md:px-8 flex items-center justify-between shrink-0">
+          <div className="flex items-center space-x-3">
+            {/* Hamburger (☰) Toggle Button */}
+            <button
+              onClick={toggleSidebar}
+              className="p-2 rounded-xl text-slate-600 hover:bg-background border border-border-soft transition shadow-2xs flex items-center justify-center"
+              title={isCollapsed ? "Expand Sidebar (☰)" : "Collapse Sidebar (☰)"}
+            >
+              <Menu className="w-5 h-5 text-slate-700" />
+            </button>
+
+            <h2 className="text-sm font-bold text-text-primary uppercase tracking-wide">
+              {t(menuItems.find((x) => x.id === activeTab)?.labelKey || activeTab)}
+            </h2>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            {/* NOTIFICATION BELL & DROPDOWN */}
+            <div ref={notifDropdownRef} className="relative">
+              <button
+                onClick={() => setNotifDropdownOpen((prev) => !prev)}
+                className="p-2 rounded-xl text-slate-600 hover:bg-background border border-border-soft transition shadow-2xs relative flex items-center justify-center"
+                title="Notifications"
+              >
+                <Bell className="w-5 h-5 text-slate-700" />
+                {unreadNotifCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full min-w-5 text-center shadow-md animate-pulse">
+                    {unreadNotifCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Dropdown Menu */}
+              {notifDropdownOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-surface border border-border-soft rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col text-xs font-sans">
+                  <div className="p-3.5 border-b border-border-soft flex justify-between items-center bg-background">
+                    <div className="flex items-center space-x-2 font-extrabold text-slate-900">
+                      <Bell className="w-4 h-4 text-primary" />
+                      <span>Notifications ({unreadNotifCount} unread)</span>
+                    </div>
+                    {unreadNotifCount > 0 && (
+                      <button
+                        onClick={() => {
+                          API.put("/notifications/read-all").then(() => {
+                            setUnreadNotifCount(0);
+                            setRecentNotifs((prev) => prev.map((n) => ({ ...n, is_read: true })));
+                          });
+                        }}
+                        className="text-[11px] text-primary hover:underline font-extrabold"
+                      >
+                        Mark All as Read
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="max-h-80 overflow-y-auto divide-y divide-border-soft">
+                    {recentNotifs.length > 0 ? (
+                      recentNotifs.map((n) => (
+                        <div
+                          key={n.id}
+                          className={`p-3.5 transition space-y-1.5 ${
+                            !n.is_read ? "bg-primary/5 font-semibold" : "bg-surface text-slate-600"
+                          }`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <span className="font-extrabold text-slate-900 flex items-center space-x-1.5">
+                              {n.type === "inactive_customer" ? (
+                                <UserRoundX className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              ) : n.type === "membership_expiry" ? (
+                                <CalendarClock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              ) : (
+                                <Bell className="w-3.5 h-3.5 text-primary shrink-0" />
+                              )}
+                              <span>{n.title}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              {n.data?.days_since_last_visit ? `Inactive • ${n.data.days_since_last_visit}d` : n.data?.expiry_date || ""}
+                            </span>
+                          </div>
+                          <p className="text-[11px] leading-tight text-slate-700">{n.message}</p>
+
+                          {n.type === "inactive_customer" && (
+                            <div className="pt-1 flex items-center space-x-2">
+                              <button
+                                onClick={() => {
+                                  setNotifDropdownOpen(false);
+                                  setActiveTab("notifications");
+                                }}
+                                className="text-[10px] bg-indigo-600 text-white px-2.5 py-1 rounded-lg font-bold flex items-center space-x-1 transition shadow-2xs"
+                              >
+                                <span>Re-engage Customer</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {n.type === "membership_expiry" && (
+                            <div className="pt-1">
+                              <button
+                                onClick={() => {
+                                  setNotifDropdownOpen(false);
+                                  setActiveTab("memberships");
+                                }}
+                                className="text-[10px] bg-primary text-white px-2.5 py-1 rounded-lg font-bold flex items-center space-x-1 transition shadow-2xs"
+                              >
+                                <RotateCw className="w-3 h-3" />
+                                <span>Renew Membership</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-6 text-center text-slate-400 font-bold">
+                        No notifications available.
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setNotifDropdownOpen(false);
+                      setActiveTab("notifications");
+                    }}
+                    className="p-3 bg-background border-t border-border-soft text-center font-extrabold text-primary hover:bg-primary/10 transition"
+                  >
+                    View All Notifications →
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={onNavigateHome}
-              className="flex items-center space-x-1.5 text-xs text-text-secondary hover:text-primary font-semibold transition"
+              className="hidden sm:flex items-center space-x-1.5 text-xs text-text-secondary hover:text-primary font-semibold transition"
             >
               <Globe className="w-3.5 h-3.5 text-primary" />
               <span>View Public Landing Page</span>
@@ -136,8 +495,8 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome })
           </div>
         </header>
 
-        {/* Content Canvas */}
-        <div className="flex-1 overflow-y-auto p-8">
+        {/* Content View */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {children}
         </div>
       </main>

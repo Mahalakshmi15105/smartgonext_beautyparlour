@@ -1,7 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
+import { AlertTriangle, X } from "lucide-react";
 
 function Products() {
+  const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
+  const modalRef = useRef(null);
+  const formRef = useRef(null);
+
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,6 +35,12 @@ function Products() {
     status: "active",
   });
 
+  useModalFocusTrap(showModal, modalRef, () => setShowModal(false));
+  useFormKeyboardNavigation(formRef, () => {
+    const submitBtn = modalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
+  });
+
   const fetchProducts = (currentCursor = null) => {
     setLoading(true);
     let url = `/products?limit=10`;
@@ -37,8 +50,8 @@ function Products() {
 
     API.get(url)
       .then((res) => {
-        setProducts(res.data.items);
-        setNextCursor(res.data.next_cursor);
+        setProducts(res.data?.items || []);
+        setNextCursor(res.data?.next_cursor || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -212,9 +225,14 @@ function Products() {
                         <span className={`font-semibold ${isLowStock ? "text-danger" : "text-text-primary"}`}>
                           {p.stock_quantity}
                         </span>
-                        {isLowStock && <span className="text-[10px] text-danger ml-2 font-medium">⚠️ Low Stock</span>}
+                        {isLowStock && (
+                          <span className="text-[10px] text-danger ml-2 font-medium inline-flex items-center space-x-0.5">
+                            <AlertTriangle className="w-3 h-3 text-danger" />
+                            <span>Low Stock</span>
+                          </span>
+                        )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-text-secondary">INR {p.selling_price}</td>
+                      <td className="px-6 py-4 text-sm text-text-secondary">{formatCurrency(p.selling_price)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                           p.status === "active" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
@@ -260,16 +278,16 @@ function Products() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={modalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">
                 {editId ? "Edit Product" : "Add New Product"}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">Product Name *</label>
                 <input
@@ -328,7 +346,7 @@ function Products() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Cost Price (INR) *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Cost Price ({currencySymbol}) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -339,7 +357,7 @@ function Products() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Selling Price (INR) *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Selling Price ({currencySymbol}) *</label>
                   <input
                     type="number"
                     step="0.01"

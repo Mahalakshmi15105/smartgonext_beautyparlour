@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
+import { UserRoundX, X } from "lucide-react";
 
 function Customers() {
+  const modalRef = useRef(null);
+  const formRef = useRef(null);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -23,6 +27,12 @@ function Customers() {
     date_of_birth: "",
     address: "",
     notes: "",
+  });
+
+  useModalFocusTrap(showModal, modalRef, () => setShowModal(false));
+  useFormKeyboardNavigation(formRef, () => {
+    const submitBtn = modalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
   });
 
   const fetchCustomers = (currentCursor = null) => {
@@ -192,7 +202,15 @@ function Customers() {
                 {customers.map((c) => (
                   <tr key={c.id} className="hover:bg-background/50 transition">
                     <td className="px-6 py-4 text-sm font-medium text-text-primary">
-                      {c.first_name} {c.last_name}
+                      <div className="flex items-center space-x-2">
+                        <span>{c.first_name} {c.last_name}</span>
+                        {c.days_since_last_visit && c.days_since_last_visit >= 60 && (
+                          <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center space-x-1">
+                            <UserRoundX className="w-3 h-3 text-indigo-600" />
+                            <span>Inactive • {c.days_since_last_visit} Days</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{c.phone}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{c.email || "-"}</td>
@@ -234,16 +252,30 @@ function Customers() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={modalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
-              <h3 className="text-md font-semibold text-text-primary">
-                {editId ? "Edit Customer" : "Add New Customer"}
-              </h3>
-              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <div className="flex items-center space-x-2">
+                <h3 className="text-md font-semibold text-text-primary">
+                  {editId ? "Edit Customer" : "Add New Customer"}
+                </h3>
+                {editId && (() => {
+                  const currentCust = customers.find((c) => c.id === editId);
+                  if (currentCust?.days_since_last_visit && currentCust.days_since_last_visit >= 60) {
+                    return (
+                      <span className="bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full flex items-center space-x-1">
+                        <UserRoundX className="w-3 h-3 text-indigo-600" />
+                        <span>Inactive • {currentCust.days_since_last_visit} Days</span>
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-text-secondary mb-1">First Name *</label>

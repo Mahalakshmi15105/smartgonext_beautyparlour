@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
 import { X } from "lucide-react";
+import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
 
 function SuperAdmin() {
+  const modalRef = useRef(null);
+  const formRef = useRef(null);
+
   const [activeTab, setActiveTab] = useState("overview");
   const [dashboard, setDashboard] = useState(null);
   const [tenants, setTenants] = useState([]);
@@ -20,6 +24,12 @@ function SuperAdmin() {
     admin_email: "",
     admin_password: "",
     plan_id: "",
+  });
+
+  useModalFocusTrap(showProvisionModal, modalRef, () => setShowProvisionModal(false));
+  useFormKeyboardNavigation(formRef, () => {
+    const submitBtn = modalRef.current?.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.click();
   });
 
   const fetchData = () => {
@@ -279,14 +289,14 @@ function SuperAdmin() {
       {/* Provision Tenant Modal */}
       {showProvisionModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-md w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={modalRef} className="bg-surface max-w-md w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Provision New Beauty Parlour</h3>
               <button onClick={() => setShowProvisionModal(false)} className="text-text-secondary hover:text-text-primary">
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <form onSubmit={handleProvisionSubmit} className="p-6 space-y-4">
+            <form ref={formRef} onSubmit={handleProvisionSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-text-secondary mb-1">Parlour Name *</label>
                 <input

@@ -14,12 +14,14 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-
 import { AlertTriangle } from "lucide-react";
+import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
 
 const COLORS = ["#EC4899", "#10B981", "#F59E0B", "#EF4444", "#64748B"];
 
 function Dashboard() {
+  const { formatCurrency, t } = useLanguageCurrency();
+
   const [summary, setSummary] = useState(null);
   const [charts, setCharts] = useState(null);
   const [activities, setActivities] = useState(null);
@@ -74,7 +76,7 @@ function Dashboard() {
       {/* Title & Filter Bar */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Executive Business Intelligence</h1>
+          <h1 className="text-xl font-semibold text-text-primary">{t("dashboard_overview")}</h1>
           <p className="text-xs text-text-secondary">Real-time revenue metrics, staff performance, and inventory health.</p>
         </div>
         <div className="flex items-center space-x-3">
@@ -109,24 +111,24 @@ function Dashboard() {
       <div className="grid grid-cols-4 gap-6">
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm flex flex-col justify-between">
           <p className="text-xs font-semibold text-text-secondary uppercase">Today's Revenue</p>
-          <p className="text-2xl font-bold text-text-primary mt-2">INR {summary?.revenue?.today?.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-text-primary mt-2">{formatCurrency(summary?.revenue?.today)}</p>
           <p className="text-[10px] text-success font-medium mt-2">▲ {summary?.invoices?.today} Bills Processed</p>
         </div>
 
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm flex flex-col justify-between">
           <p className="text-xs font-semibold text-text-secondary uppercase">Weekly Revenue</p>
-          <p className="text-2xl font-bold text-text-primary mt-2">INR {summary?.revenue?.weekly?.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-text-primary mt-2">{formatCurrency(summary?.revenue?.weekly)}</p>
           <p className="text-[10px] text-text-secondary mt-2">Last 7 Days Rolling</p>
         </div>
 
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm flex flex-col justify-between">
           <p className="text-xs font-semibold text-text-secondary uppercase">Monthly Revenue</p>
-          <p className="text-2xl font-bold text-text-primary mt-2">INR {summary?.revenue?.monthly?.toFixed(2)}</p>
+          <p className="text-2xl font-bold text-text-primary mt-2">{formatCurrency(summary?.revenue?.monthly)}</p>
           <p className="text-[10px] text-text-secondary mt-2">{summary?.invoices?.this_month} Bills This Month</p>
         </div>
 
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm flex flex-col justify-between">
-          <p className="text-xs font-semibold text-text-secondary uppercase">Active Memberships</p>
+          <p className="text-xs font-semibold text-text-secondary uppercase">{t("active_customers")}</p>
           <p className="text-2xl font-bold text-text-primary mt-2">{summary?.memberships?.active}</p>
           <p className="text-[10px] text-warning font-medium mt-2">{summary?.memberships?.expiring_soon} Expiring Soon</p>
         </div>
@@ -136,7 +138,7 @@ function Dashboard() {
       <div className="grid grid-cols-12 gap-8">
         {/* Daily Revenue Area Chart */}
         <div className="col-span-8 bg-surface border border-border-soft p-6 rounded-lg shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-text-primary">Revenue Trend</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t("revenue_chart")}</h3>
           <div className="h-64">
             {charts?.daily_trend?.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-text-secondary">No billing activity recorded in this period.</div>
@@ -152,7 +154,7 @@ function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
+                  <Tooltip formatter={(value) => [formatCurrency(value), "Revenue"]} />
                   <Area type="monotone" dataKey="revenue" stroke="#7C3AED" fillOpacity={1} fill="url(#colorRev)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -172,61 +174,9 @@ function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
                   <XAxis type="number" tick={{ fontSize: 10 }} />
                   <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
-                  <Tooltip />
+                  <Tooltip formatter={(value) => [formatCurrency(value), "Revenue"]} />
                   <Bar dataKey="revenue" fill="#10B981" radius={[0, 4, 4, 0]} />
                 </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Charts Row 2: Employee Performance & Payment Distributions */}
-      <div className="grid grid-cols-12 gap-8">
-        {/* Employee Revenue Bar Chart */}
-        <div className="col-span-7 bg-surface border border-border-soft p-6 rounded-lg shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-text-primary">Stylist Revenue Contributions</h3>
-          <div className="h-64">
-            {charts?.employee_performance?.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-text-secondary">No employee service logs.</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={charts?.employee_performance}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="revenue" fill="#7C3AED" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Payment Modes Pie Chart */}
-        <div className="col-span-5 bg-surface border border-border-soft p-6 rounded-lg shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-text-primary">Payment Modes Breakdown</h3>
-          <div className="h-64 flex items-center justify-center">
-            {charts?.payment_distribution?.length === 0 ? (
-              <div className="text-xs text-text-secondary">No payment data recorded.</div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={charts?.payment_distribution}
-                    dataKey="amount"
-                    nameKey="method"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                  >
-                    {charts?.payment_distribution?.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
               </ResponsiveContainer>
             )}
           </div>
@@ -237,7 +187,7 @@ function Dashboard() {
       <div className="grid grid-cols-2 gap-8">
         {/* Latest Checkout Invoices */}
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-text-primary">Latest Checkout Receipts</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t("pos_billing")}</h3>
           {activities?.recent_invoices?.length === 0 ? (
             <p className="text-xs text-text-secondary">No recent transactions.</p>
           ) : (
@@ -249,7 +199,7 @@ function Dashboard() {
                     <p className="text-text-secondary">{inv.customer_name || "Walk-In Client"}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-text-primary">INR {inv.total.toFixed(2)}</p>
+                    <p className="font-semibold text-text-primary">{formatCurrency(inv.total)}</p>
                     <span className={`text-[10px] font-medium ${
                       inv.status === "Paid" ? "text-success" : "text-danger"
                     }`}>{inv.status}</span>
@@ -262,7 +212,7 @@ function Dashboard() {
 
         {/* Latest Registered Customers */}
         <div className="bg-surface border border-border-soft p-6 rounded-lg shadow-sm space-y-4">
-          <h3 className="text-sm font-semibold text-text-primary">New Client Registrations</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t("recent_activities")}</h3>
           {activities?.recent_customers?.length === 0 ? (
             <p className="text-xs text-text-secondary">No new registrations.</p>
           ) : (

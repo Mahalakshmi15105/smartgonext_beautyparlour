@@ -24,6 +24,31 @@ def create_app(config_class=Config):
     CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
     db.init_app(app)
     migrate.init_app(app, db)
+    with app.app_context():
+        alters = [
+            "ALTER TABLE tenant_settings ADD COLUMN logo_url VARCHAR(255) NULL",
+            "ALTER TABLE tenant_settings ADD COLUMN receipt_template VARCHAR(50) NOT NULL DEFAULT 'Classic'",
+            "ALTER TABLE tenant_settings ADD COLUMN paper_size VARCHAR(20) NOT NULL DEFAULT '80mm'",
+            "ALTER TABLE tenant_settings ADD COLUMN show_gst TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE tenant_settings ADD COLUMN show_address TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE tenant_settings ADD COLUMN show_phone TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE tenant_settings ADD COLUMN show_email TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE tenant_settings ADD COLUMN show_website TINYINT(1) NOT NULL DEFAULT 1",
+            "ALTER TABLE tenant_settings ADD COLUMN show_qr_code TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE tenant_settings ADD COLUMN auto_print TINYINT(1) NOT NULL DEFAULT 0",
+            "ALTER TABLE tenant_settings ADD COLUMN thank_you_message VARCHAR(255) NULL DEFAULT 'Thank you for visiting. Please visit again.'",
+            "ALTER TABLE tenant_settings ADD COLUMN theme_name VARCHAR(50) NOT NULL DEFAULT 'Default Pink'",
+            "ALTER TABLE tenant_settings ADD COLUMN primary_color VARCHAR(30) NOT NULL DEFAULT '#EC4899'",
+            "ALTER TABLE tenant_settings ADD COLUMN secondary_color VARCHAR(30) NOT NULL DEFAULT '#F472B6'",
+            "ALTER TABLE tenant_settings ADD COLUMN accent_color VARCHAR(30) NOT NULL DEFAULT '#FDF2F8'",
+        ]
+        for stmt in alters:
+            try:
+                db.session.execute(db.text(stmt))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        db.create_all()
     
     # Initialize JWT
     jwt = JWTManager(app)
@@ -41,6 +66,7 @@ def create_app(config_class=Config):
     from app.routes.reports import reports_bp
     from app.routes.settings import settings_bp
     from app.routes.super_admin import super_admin_bp
+    from app.routes.notifications import notifications_bp
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1")
     app.register_blueprint(customers_bp, url_prefix="/api/v1")
@@ -53,6 +79,15 @@ def create_app(config_class=Config):
     app.register_blueprint(reports_bp, url_prefix="/api/v1")
     app.register_blueprint(settings_bp, url_prefix="/api/v1")
     app.register_blueprint(super_admin_bp, url_prefix="/api/v1")
+    app.register_blueprint(notifications_bp, url_prefix="/api/v1")
+
+    from flask import send_from_directory
+    import os
+
+    @app.route("/api/v1/static/uploads/<path:filename>")
+    def serve_static_uploads(filename):
+        upload_dir = os.path.join(app.root_path, "static", "uploads")
+        return send_from_directory(upload_dir, filename)
 
     # Global JWT Custom Error Handlers
     @jwt.unauthorized_loader

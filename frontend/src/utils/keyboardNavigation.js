@@ -1,0 +1,230 @@
+import { useEffect, useRef } from "react";
+
+/**
+ * Checks if a DOM element is navigable and focusable via keyboard navigation.
+ * Skips disabled, read-only, hidden, or non-editable elements.
+ */
+export function isElementNavigable(el) {
+  if (!el || typeof el.getBoundingClientRect !== "function") return false;
+  if (el.disabled || el.readOnly) return false;
+  if (el.type === "hidden") return false;
+  if (el.getAttribute("tabindex") === "-1") return false;
+
+  // Visibility check
+  try {
+    const style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+      return false;
+    }
+  } catch (e) {
+    return false;
+  }
+  return el.offsetWidth > 0 || el.offsetHeight > 0 || (el.getClientRects && el.getClientRects().length > 0);
+}
+
+/**
+ * Validates the current input control before allowing focus movement.
+ * Returns true if valid or false if validation fails.
+ */
+export function validateCurrentInput(el) {
+  if (!el) return true;
+  
+  // Custom or native HTML5 validation
+  if (typeof el.checkValidity === "function") {
+    if (!el.checkValidity()) {
+      if (typeof el.reportValidity === "function") {
+        try {
+          el.reportValidity();
+        } catch (e) {
+          // ignore
+        }
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Custom React Hook: Form Keyboard Navigation Engine
+ * Automatically moves focus to the next editable control on Enter key press.
+ * Validates current field before moving, skips disabled/read-only fields,
+ * and preserves browser native shortcuts (Ctrl+C, Ctrl+V, etc.).
+ */
+export function useFormKeyboardNavigation(containerRef, onSubmit) {
+  useEffect(() => {
+    const container = containerRef?.current || document;
+    if (!container) return;
+
+    const handleKeyDown = (e) => {
+      // Preserve native system/browser key combinations (Ctrl, Alt, Meta)
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      // Handle Enter key for form input advancement
+      if (e.key === "Enter") {
+        const activeEl = document.activeElement;
+
+        // Allow multiline text entering inside textareas
+        if (activeEl && activeEl.tagName === "TEXTAREA" && !e.ctrlKey) {
+          return;
+        }
+
+        // Validate active input field before advancing
+        if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "SELECT")) {
+          if (!validateCurrentInput(activeEl)) {
+            e.preventDefault();
+            return;
+          }
+        }
+
+        // Query all focusable elements inside container
+        const focusables = Array.from(
+          container.querySelectorAll(
+            'input:not([type="hidden"]), select, textarea, button, [tabindex="0"]'
+          )
+        ).filter(isElementNavigable);
+
+        if (focusables.length === 0) return;
+
+        const currentIndex = focusables.indexOf(activeEl);
+
+        if (currentIndex !== -1 && currentIndex < focusables.length - 1) {
+          e.preventDefault();
+          const nextEl = focusables[currentIndex + 1];
+          try {
+            nextEl.focus();
+            if (typeof nextEl.select === "function" && nextEl.tagName === "INPUT") {
+              nextEl.select();
+            }
+          } catch (err) {
+            // ignore
+          }
+        } else if (currentIndex === focusables.length - 1 || (activeEl && activeEl.type === "submit")) {
+          if (onSubmit && typeof onSubmit === "function") {
+            e.preventDefault();
+            onSubmit(e);
+          }
+        }
+      }
+    };
+
+    container.addEventListener("keydown", handleKeyDown);
+    return () => container.removeEventListener("keydown", handleKeyDown);
+  }, [containerRef, onSubmit]);
+}
+
+/**
+ * Custom React Hook: Modal Focus Trap & Escape Handler
+ * Traps Tab focus inside the active modal, auto-focuses the first input,
+ * handles Escape key to close, and restores focus to the triggering element.
+ */
+export function useModalFocusTrap(isOpen, modalRef, onClose) {
+  const previousFocusRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement;
+
+      // Auto-focus the first navigable input/control inside the modal
+      const timer = setTimeout(() => {
+        const targetContainer = modalRef?.current;
+        if (targetContainer) {
+          const focusables = Array.from(
+            targetContainer.querySelectorAll(
+              'input:not([type="hidden"]), select, textarea, button, [tabindex="0"]'
+            )
+          ).filter(isElementNavigable);
+
+          if (focusables.length > 0) {
+            try {
+              focusables[0].focus();
+              if (typeof focusables[0].select === "function" && focusables[0].tagName === "INPUT") {
+                focusables[0].select();
+              }
+            } catch (err) {
+              // ignore
+            }
+          }
+        }
+      }, 50);
+
+      const handleModalKeyDown = (e) => {
+        // Escape key closes modal
+        if (e.key === "Escape") {
+          e.preventDefault();
+          if (onCloseRef.current) onCloseRef.current();
+          return;
+        }
+
+        // Tab key focus trap inside modal
+        const targetContainer = modalRef?.current;
+        if (e.key === "Tab" && targetContainer) {
+          const focusables = Array.from(
+            targetContainer.querySelectorAll(
+              'input:not([type="hidden"]), select, textarea, button, [tabindex="0"]'
+            )
+          ).filter(isElementNavigable);
+
+          if (focusables.length === 0) return;
+
+          const firstEl = focusables[0];
+          const lastEl = focusables[focusables.length - 1];
+
+          if (e.shiftKey) {
+            if (document.activeElement === firstEl) {
+              e.preventDefault();
+              try {
+                lastEl.focus();
+              } catch (err) {}
+            }
+          } else {
+            if (document.activeElement === lastEl) {
+              e.preventDefault();
+              try {
+                firstEl.focus();
+              } catch (err) {}
+            }
+          }
+        }
+      };
+
+      document.addEventListener("keydown", handleModalKeyDown);
+
+      return () => {
+        clearTimeout(timer);
+        document.removeEventListener("keydown", handleModalKeyDown);
+        if (previousFocusRef.current && typeof previousFocusRef.current.focus === "function") {
+          try {
+            previousFocusRef.current.focus();
+          } catch (err) {
+            // ignore
+          }
+        }
+      };
+    }
+  }, [isOpen, modalRef]);
+}
+
+/**
+ * Utility: Advances focus directly to a target ref if current element is valid.
+ */
+export function advanceToNextRef(currentEl, nextRef, onSubmit) {
+  if (currentEl && !validateCurrentInput(currentEl)) {
+    return false;
+  }
+  if (nextRef && nextRef.current && isElementNavigable(nextRef.current)) {
+    try {
+      nextRef.current.focus();
+      if (typeof nextRef.current.select === "function" && nextRef.current.tagName === "INPUT") {
+        nextRef.current.select();
+      }
+    } catch (err) {}
+    return true;
+  } else if (onSubmit && typeof onSubmit === "function") {
+    onSubmit();
+    return true;
+  }
+  return false;
+}
