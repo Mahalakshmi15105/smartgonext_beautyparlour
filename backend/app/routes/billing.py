@@ -339,15 +339,27 @@ def get_invoice(invoice_id):
 
     lines = []
     for item in invoice.line_items:
+        item_name = ""
+        if item.service_id and item.service:
+            item_name = item.service.name
+        elif item.product_id and item.product:
+            item_name = item.product.name
+        else:
+            item_name = "Item"
+
+        emp_name = f"{item.employee.first_name} {item.employee.last_name or ''}".strip() if item.employee else ""
+
         lines.append({
             "id": item.id,
-            "name": item.service.name if item.service else item.product.name,
-            "type": "service" if item.service else "product",
+            "name": item_name,
+            "item_name": item_name,
+            "type": "service" if item.service_id else "product",
             "quantity": item.quantity,
             "unit_price": float(item.unit_price),
             "discount_amount": float(item.discount_amount),
             "line_total": float(item.line_total),
-            "employee_name": f"{item.employee.first_name} {item.employee.last_name or ''}".strip()
+            "staff_name": emp_name,
+            "employee_name": emp_name
         })
 
     payments = []

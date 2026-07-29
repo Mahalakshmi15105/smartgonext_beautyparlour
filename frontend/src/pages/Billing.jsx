@@ -72,6 +72,7 @@ function Billing() {
   // Master Datasets
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
+  const [products, setProducts] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [customers, setCustomers] = useState([]);
 
@@ -80,6 +81,10 @@ function Billing() {
   const [selectedGender, setSelectedGender] = useState("Female");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedServiceId, setSelectedServiceId] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState("");
+
+  const productSelectRef = useRef(null);
+  const addProductBtnRef = useRef(null);
 
   // POS Cart State
   const [cart, setCart] = useState([]);
@@ -353,20 +358,22 @@ function Billing() {
       });
   };
 
-  // Initial Load: Fetch Categories, Employees, Customers, Settings
+  // Initial Load: Fetch Categories, Employees, Customers, Products, Settings
   useEffect(() => {
     setLoading(true);
     Promise.all([
       API.get("/service-categories"),
       API.get("/employees?limit=100"),
       API.get("/customers?limit=100"),
+      API.get("/products?limit=100"),
       API.get("/settings"),
     ])
-      .then(([catRes, empRes, custRes, setRes]) => {
+      .then(([catRes, empRes, custRes, prodRes, setRes]) => {
         const catList = catRes.data || [];
         setCategories(catList);
         setEmployees(empRes.data.items || []);
         setCustomers(custRes.data.items || []);
+        setProducts(prodRes.data.items || prodRes.data || []);
 
         if (setRes.data?.invoice_settings?.tax_rate !== undefined) {
           setTaxRate(parseFloat(setRes.data.invoice_settings.tax_rate));
@@ -457,11 +464,59 @@ function Billing() {
     setCart((prevCart) => [...prevCart, newItem]);
   };
 
+  const handleAddProductToCart = (productIdToUse) => {
+    const targetId = productIdToUse || selectedProductId;
+    if (!targetId) return;
+
+    const prodObj = products.find((p) => p.id === parseInt(targetId));
+    if (!prodObj) return;
+
+    if (prodObj.stock_quantity !== undefined && prodObj.stock_quantity <= 0) {
+      alert(`Product "${prodObj.name}" is out of stock (Available: 0). Unable to add.`);
+      return;
+    }
+
+    const existingIndex = cart.findIndex((item) => item.type === "product" && item.item_id === prodObj.id);
+    if (existingIndex >= 0) {
+      const currentQty = cart[existingIndex].quantity;
+      if (prodObj.stock_quantity !== undefined && currentQty + 1 > prodObj.stock_quantity) {
+        alert(`Cannot add more "${prodObj.name}". Quantity (${currentQty + 1}) exceeds available stock (${prodObj.stock_quantity}).`);
+        return;
+      }
+      handleUpdateQty(existingIndex, currentQty + 1);
+      return;
+    }
+
+    const defaultEmpId = employees.length > 0 ? employees[0].id : null;
+    const defaultEmpIds = defaultEmpId ? [defaultEmpId] : [];
+
+    const newItem = {
+      type: "product",
+      item_id: prodObj.id,
+      name: prodObj.name,
+      gross_amount: parseFloat(prodObj.selling_price || prodObj.price || 0),
+      quantity: 1,
+      discount_percent: 0,
+      tax_rate: taxRate,
+      employee_ids: defaultEmpIds,
+      stock_quantity: prodObj.stock_quantity,
+    };
+
+    setCart((prevCart) => [...prevCart, newItem]);
+  };
+
   // Cart Updaters with e.target.select() onFocus
   const handleUpdateQty = (index, val) => {
     const updated = [...cart];
+    const item = updated[index];
     const parsed = val === "" ? 1 : Math.max(1, parseInt(val, 10) || 1);
-    updated[index].quantity = parsed;
+
+    if (item.type === "product" && item.stock_quantity !== undefined && parsed > item.stock_quantity) {
+      alert(`Quantity (${parsed}) exceeds available stock (${item.stock_quantity}) for "${item.name}". Quantity set to stock limit.`);
+      item.quantity = item.stock_quantity;
+    } else {
+      item.quantity = parsed;
+    }
     setCart(updated);
   };
 
@@ -693,7 +748,7 @@ function Billing() {
 
   const handleSaveDraft = () => {
     if (cart.length === 0) {
-      alert("Cart is empty. Add services before saving draft.");
+      alert("Cart is empty. Add services or products before saving draft.");
       return;
     }
     setDraftSaved(true);
@@ -1129,12 +1184,66 @@ function Billing() {
             </div>
           </div>
 
+          {/* Optional Step: Product Selection */}
+          <div className="bg-surface border border-border-soft p-6 rounded-2xl shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-xs font-extrabold text-primary uppercase tracking-wider">
+                <Package className="w-4 h-4 text-emerald-600" />
+                <span>Optional Step: Product Selection (Salon Retail Products)</span>
+              </div>
+              <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full uppercase border border-emerald-200">
+                Optional
+              </span>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-6 items-end">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Choose Retail Product (Name • Selling Price • Available Stock)
+                </label>
+                <select
+                  ref={productSelectRef}
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+                >
+                  <option value="">-- Choose Product (Optional) --</option>
+                  {products.map((prod) => {
+                    const isOutOfStock = prod.stock_quantity !== undefined && prod.stock_quantity <= 0;
+                    return (
+                      <option key={prod.id} value={prod.id} disabled={isOutOfStock}>
+                        {prod.name} — {currencySymbol} {parseFloat(prod.selling_price || prod.price || 0).toFixed(2)} (Stock: {prod.stock_quantity !== undefined ? prod.stock_quantity : "Available"}){isOutOfStock ? " [Out of Stock]" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <button
+                ref={addProductBtnRef}
+                onClick={() => {
+                  handleAddProductToCart(selectedProductId);
+                  setTimeout(() => {
+                    if (productSelectRef.current && isElementNavigable(productSelectRef.current)) {
+                      productSelectRef.current.focus();
+                    }
+                  }, 50);
+                }}
+                disabled={!selectedProductId}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Product to Table</span>
+              </button>
+            </div>
+          </div>
+
           {/* Step 5: Billing Line Items Table */}
           <div className="bg-surface border border-border-soft rounded-2xl shadow-xs overflow-hidden">
             <div className="p-6 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-wider flex items-center space-x-2">
                 <FileText className="w-4 h-4 text-primary" />
-                <span>Billing Line Items Table</span>
+                <span>Billing Line Items Table (Services & Products)</span>
               </h3>
               <span className="text-xs font-bold text-text-secondary">
                 {cart.length} line item(s)
@@ -1146,7 +1255,7 @@ function Billing() {
                 <thead>
                   <tr className="bg-primary-light border-b border-border-soft text-slate-700">
                     <th className="px-3 py-3 font-extrabold w-12 text-center">S.No</th>
-                    <th className="px-4 py-3 font-extrabold">Item Description (Service Name)</th>
+                    <th className="px-4 py-3 font-extrabold">Item Description (Service / Product)</th>
                     <th className="px-4 py-3 font-extrabold">Gross Amount</th>
                     <th className="px-3 py-3 font-extrabold w-20">Qty</th>
                     <th className="px-4 py-3 font-extrabold">Gross × Qty</th>
@@ -1154,7 +1263,7 @@ function Billing() {
                     <th className="px-4 py-3 font-extrabold">Discount Amount</th>
                     <th className="px-4 py-3 font-extrabold">Net Amount</th>
                     <th className="px-3 py-3 font-extrabold w-20">Tax (%)</th>
-                    <th className="px-4 py-3 font-extrabold min-w-[200px]">Employee (Stylist) Multi-Select *</th>
+                    <th className="px-4 py-3 font-extrabold min-w-[200px]">Employee (Stylist / Seller) Multi-Select *</th>
                     <th className="px-4 py-3 font-extrabold text-right">Action</th>
                   </tr>
                 </thead>
@@ -1162,7 +1271,7 @@ function Billing() {
                   {cart.length === 0 ? (
                     <tr>
                       <td colSpan={11} className="p-8 text-center text-text-secondary font-medium">
-                        Table is empty. Select a Category and Service above, then click <strong>"Add Service to Table"</strong>.
+                        Table is empty. Select a <strong>Service</strong> or <strong>Product</strong> above, then click <strong>"Add to Table"</strong>.
                       </td>
                     </tr>
                   ) : (
@@ -1174,7 +1283,18 @@ function Billing() {
                       return (
                         <tr key={idx} className="hover:bg-background/60 transition">
                           <td className="px-3 py-3 font-bold text-slate-500 text-center">{idx + 1}</td>
-                          <td className="px-4 py-3 font-extrabold text-slate-900">{item.name}</td>
+                          <td className="px-4 py-3 font-extrabold text-slate-900">
+                            <div className="flex items-center space-x-2">
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase border ${
+                                item.type === "product"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-pink-50 text-primary border-pink-200"
+                              }`}>
+                                {item.type === "product" ? "Product" : "Service"}
+                              </span>
+                              <span>{item.name}</span>
+                            </div>
+                          </td>
                           <td className="px-4 py-3 font-medium text-slate-700">
                             {currencySymbol} {item.gross_amount.toFixed(2)}
                           </td>
