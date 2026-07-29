@@ -37,6 +37,7 @@ import {
   Check,
   X,
   Receipt,
+  ChevronDown,
 } from "lucide-react";
 
 import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
@@ -164,15 +165,47 @@ function Billing() {
   const [customerHistoryError, setCustomerHistoryError] = useState(null);
   const [readOnlyInvoiceDetail, setReadOnlyInvoiceDetail] = useState(null);
 
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [productQuantities, setProductQuantities] = useState({});
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+
   const quickCustomerModalRef = useRef(null);
   const quickCustomerFormRef = useRef(null);
   const customerComboboxRef = useRef(null);
   const customerHistoryModalRef = useRef(null);
+  const addProductModalRef = useRef(null);
+  const productDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (productDropdownRef.current && !productDropdownRef.current.contains(event.target)) {
+        setIsProductDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const getProductInputValue = () => {
+    if (isProductDropdownOpen && productSearchQuery !== "") {
+      return productSearchQuery;
+    }
+    if (selectedProductIds.length > 0) {
+      const names = selectedProductIds
+        .map((id) => products.find((p) => p.id === id)?.name)
+        .filter(Boolean);
+      return names.join(", ");
+    }
+    return productSearchQuery;
+  };
 
   useModalFocusTrap(showPaymentModal, paymentModalRef, () => setShowPaymentModal(false));
   useModalFocusTrap(showReceipt, receiptModalRef, () => setShowReceipt(false));
   useModalFocusTrap(showQuickCustomerModal, quickCustomerModalRef, () => setShowQuickCustomerModal(false));
   useModalFocusTrap(showCustomerHistoryModal, customerHistoryModalRef, () => setShowCustomerHistoryModal(false));
+  useModalFocusTrap(showAddProductModal, addProductModalRef, () => setShowAddProductModal(false));
 
   const openCustomerHistory = () => {
     if (!selectedCustomerId || selectedCustomerId === "walkin") {
@@ -447,24 +480,41 @@ function Billing() {
     const serviceObj = services.find((s) => s.id === parseInt(targetId));
     if (!serviceObj) return;
 
-    const defaultEmpId = employees.length > 0 ? employees[0].id : null;
-    const defaultEmpIds = defaultEmpId ? [defaultEmpId] : [];
+    setCart((prevCart) => {
+      const existingIndex = prevCart.findIndex(
+        (item) => item.type === "service" && item.item_id === serviceObj.id
+      );
 
-    const newItem = {
-      type: "service",
-      item_id: serviceObj.id,
-      name: serviceObj.name,
-      gross_amount: parseFloat(serviceObj.price),
-      quantity: 1,
-      discount_percent: 0,
-      tax_rate: taxRate,
-      employee_ids: defaultEmpIds,
-    };
+      if (existingIndex >= 0) {
+        // Service already in cart -> increment quantity
+        const updated = [...prevCart];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: updated[existingIndex].quantity + 1,
+        };
+        return updated;
+      }
 
-    setCart((prevCart) => [...prevCart, newItem]);
+      // New service -> add single row
+      const defaultEmpId = employees.length > 0 ? employees[0].id : null;
+      const defaultEmpIds = defaultEmpId ? [defaultEmpId] : [];
+
+      const newItem = {
+        type: "service",
+        item_id: serviceObj.id,
+        name: serviceObj.name,
+        gross_amount: parseFloat(serviceObj.price),
+        quantity: 1,
+        discount_percent: 0,
+        tax_rate: taxRate,
+        employee_ids: defaultEmpIds,
+      };
+
+      return [...prevCart, newItem];
+    });
   };
 
-  const handleAddProductToCart = (productIdToUse) => {
+  const handleAddProductToCart = (productIdToUse, qtyToAdd = 1) => {
     const targetId = productIdToUse || selectedProductId;
     if (!targetId) return;
 
@@ -476,33 +526,44 @@ function Billing() {
       return;
     }
 
-    const existingIndex = cart.findIndex((item) => item.type === "product" && item.item_id === prodObj.id);
-    if (existingIndex >= 0) {
-      const currentQty = cart[existingIndex].quantity;
-      if (prodObj.stock_quantity !== undefined && currentQty + 1 > prodObj.stock_quantity) {
-        alert(`Cannot add more "${prodObj.name}". Quantity (${currentQty + 1}) exceeds available stock (${prodObj.stock_quantity}).`);
-        return;
+    setCart((prevCart) => {
+      const existingIndex = prevCart.findIndex(
+        (item) => item.type === "product" && item.item_id === prodObj.id
+      );
+
+      if (existingIndex >= 0) {
+        const currentQty = prevCart[existingIndex].quantity;
+        if (prodObj.stock_quantity !== undefined && currentQty + qtyToAdd > prodObj.stock_quantity) {
+          alert(`Cannot add ${qtyToAdd} more "${prodObj.name}". Total quantity (${currentQty + qtyToAdd}) exceeds available stock (${prodObj.stock_quantity}).`);
+          return prevCart;
+        }
+        const updated = [...prevCart];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          quantity: currentQty + qtyToAdd,
+        };
+        return updated;
       }
-      handleUpdateQty(existingIndex, currentQty + 1);
-      return;
-    }
 
-    const defaultEmpId = employees.length > 0 ? employees[0].id : null;
-    const defaultEmpIds = defaultEmpId ? [defaultEmpId] : [];
+      if (prodObj.stock_quantity !== undefined && qtyToAdd > prodObj.stock_quantity) {
+        alert(`Quantity (${qtyToAdd}) exceeds available stock (${prodObj.stock_quantity}) for "${prodObj.name}".`);
+        return prevCart;
+      }
 
-    const newItem = {
-      type: "product",
-      item_id: prodObj.id,
-      name: prodObj.name,
-      gross_amount: parseFloat(prodObj.selling_price || prodObj.price || 0),
-      quantity: 1,
-      discount_percent: 0,
-      tax_rate: taxRate,
-      employee_ids: defaultEmpIds,
-      stock_quantity: prodObj.stock_quantity,
-    };
+      const newItem = {
+        type: "product",
+        item_id: prodObj.id,
+        name: prodObj.name,
+        gross_amount: parseFloat(prodObj.selling_price || prodObj.price || 0),
+        quantity: qtyToAdd,
+        discount_percent: 0,
+        tax_rate: 0, // BUSINESS RULE #6: Products DO NOT have GST/Tax
+        employee_ids: [], // Products do not require employee selection
+        stock_quantity: prodObj.stock_quantity,
+      };
 
-    setCart((prevCart) => [...prevCart, newItem]);
+      return [...prevCart, newItem];
+    });
   };
 
   // Cart Updaters with e.target.select() onFocus
@@ -564,6 +625,8 @@ function Billing() {
   };
 
   const calculateRowTaxAmount = (item) => {
+    // BUSINESS RULE #6: Products DO NOT have GST or Tax applied.
+    if (item.type === "product") return 0;
     const rowNet = calculateRowNet(item);
     return rowNet * ((item.tax_rate || 0) / 100);
   };
@@ -614,9 +677,11 @@ function Billing() {
       alert("Please add at least one service to the billing table.");
       return;
     }
-    const missingEmp = cart.some((item) => !item.employee_ids || item.employee_ids.length === 0);
+    const missingEmp = cart.some(
+      (item) => item.type === "service" && (!item.employee_ids || item.employee_ids.length === 0)
+    );
     if (missingEmp) {
-      alert("Stylist employee selection is mandatory for every line item before payment.");
+      alert("Stylist employee selection is mandatory for every service line item before payment.");
       return;
     }
 
@@ -631,7 +696,9 @@ function Billing() {
       alert(
         `Total payment allocated (${currencySymbol} ${totalAllocatedPayment.toFixed(
           2
-        )}) does not match Net Payable (${currencySymbol} ${netPayable.toFixed(2)}).`
+        )}) does not match the Net Payable amount (${currencySymbol} ${netPayable.toFixed(
+          2
+        )}). Please adjust payments.`
       );
       return;
     }
@@ -642,8 +709,8 @@ function Billing() {
         type: x.type,
         item_id: x.item_id,
         quantity: x.quantity,
-        employee_ids: x.employee_ids,
-        employee_id: x.employee_ids[0],
+        employee_ids: x.employee_ids || [],
+        employee_id: x.employee_ids && x.employee_ids.length > 0 ? x.employee_ids[0] : null,
         discount: calculateRowDiscountAmount(x),
         customer_membership_id: null,
       })),
@@ -1165,76 +1232,39 @@ function Billing() {
                 </select>
               </div>
 
-              <button
-                ref={addServiceBtnRef}
-                onClick={() => {
-                  handleAddServiceToCart(selectedServiceId);
-                  setTimeout(() => {
-                    if (serviceSelectRef.current && isElementNavigable(serviceSelectRef.current)) {
-                      serviceSelectRef.current.focus();
-                    }
-                  }, 50);
-                }}
-                disabled={!selectedServiceId}
-                className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-pink-500/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Service to Table</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Optional Step: Product Selection */}
-          <div className="bg-surface border border-border-soft p-6 rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2 text-xs font-extrabold text-primary uppercase tracking-wider">
-                <Package className="w-4 h-4 text-emerald-600" />
-                <span>Optional Step: Product Selection (Salon Retail Products)</span>
-              </div>
-              <span className="text-[10px] font-extrabold bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full uppercase border border-emerald-200">
-                Optional
-              </span>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-6 items-end">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Choose Retail Product (Name • Selling Price • Available Stock)
-                </label>
-                <select
-                  ref={productSelectRef}
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary"
+              <div className="flex items-center space-x-3">
+                <button
+                  ref={addServiceBtnRef}
+                  onClick={() => {
+                    handleAddServiceToCart(selectedServiceId);
+                    setTimeout(() => {
+                      if (serviceSelectRef.current && isElementNavigable(serviceSelectRef.current)) {
+                        serviceSelectRef.current.focus();
+                      }
+                    }, 50);
+                  }}
+                  disabled={!selectedServiceId}
+                  className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-pink-500/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
                 >
-                  <option value="">-- Choose Product (Optional) --</option>
-                  {products.map((prod) => {
-                    const isOutOfStock = prod.stock_quantity !== undefined && prod.stock_quantity <= 0;
-                    return (
-                      <option key={prod.id} value={prod.id} disabled={isOutOfStock}>
-                        {prod.name} — {currencySymbol} {parseFloat(prod.selling_price || prod.price || 0).toFixed(2)} (Stock: {prod.stock_quantity !== undefined ? prod.stock_quantity : "Available"}){isOutOfStock ? " [Out of Stock]" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+                  <Plus className="w-4 h-4" />
+                  <span>Add Service to Table</span>
+                </button>
 
-              <button
-                ref={addProductBtnRef}
-                onClick={() => {
-                  handleAddProductToCart(selectedProductId);
-                  setTimeout(() => {
-                    if (productSelectRef.current && isElementNavigable(productSelectRef.current)) {
-                      productSelectRef.current.focus();
-                    }
-                  }, 50);
-                }}
-                disabled={!selectedProductId}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 transition flex items-center justify-center space-x-2 disabled:opacity-50"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Product to Table</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProductSearchQuery("");
+                    setSelectedProductIds([]);
+                    setProductQuantities({});
+                    setIsProductDropdownOpen(false);
+                    setShowAddProductModal(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-xs font-extrabold shadow-md shadow-emerald-600/20 transition flex items-center justify-center space-x-2"
+                >
+                  <Package className="w-4 h-4" />
+                  <span>+ Add Product</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1338,43 +1368,51 @@ function Billing() {
 
                           {/* Tax (%) Input */}
                           <td className="px-3 py-3">
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.tax_rate}
-                              onFocus={(e) => e.target.select()}
-                              onChange={(e) => handleUpdateTaxRate(idx, e.target.value)}
-                              className="w-16 bg-background border border-border-soft px-2 py-1 rounded-lg text-xs font-bold text-slate-900 text-center focus:border-primary focus:outline-none"
-                            />
+                            {item.type === "product" ? (
+                              <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md border border-slate-200 block text-center">0%</span>
+                            ) : (
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.tax_rate}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => handleUpdateTaxRate(idx, e.target.value)}
+                                className="w-16 bg-background border border-border-soft px-2 py-1 rounded-lg text-xs font-bold text-slate-900 text-center focus:border-primary focus:outline-none"
+                              />
+                            )}
                           </td>
 
                           {/* Multi-Select Employee Dropdown Checklist */}
                           <td className="px-4 py-3">
-                            <div className="bg-background border border-border-soft p-2 rounded-xl space-y-1 max-h-28 overflow-y-auto">
-                              {employees.length === 0 ? (
-                                <span className="text-[10px] text-danger">No active stylists found</span>
-                              ) : (
-                                employees.map((emp) => {
-                                  const isChecked = (item.employee_ids || []).includes(emp.id);
-                                  return (
-                                    <label
-                                      key={emp.id}
-                                      className="flex items-center space-x-2 text-[11px] font-semibold text-slate-800 cursor-pointer hover:text-primary"
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isChecked}
-                                        onChange={() => handleToggleEmployee(idx, emp.id)}
-                                        className="rounded text-primary focus:ring-primary h-3.5 w-3.5"
-                                      />
-                                      <span>
-                                        {emp.first_name} {emp.last_name || ""}
-                                      </span>
-                                    </label>
-                                  );
-                                })
-                              )}
-                            </div>
+                            {item.type === "product" ? (
+                              <span className="text-slate-400 font-bold italic text-center block">—</span>
+                            ) : (
+                              <div className="bg-background border border-border-soft p-2 rounded-xl space-y-1 max-h-28 overflow-y-auto">
+                                {employees.length === 0 ? (
+                                  <span className="text-[10px] text-danger">No active stylists found</span>
+                                ) : (
+                                  employees.map((emp) => {
+                                    const isChecked = (item.employee_ids || []).includes(emp.id);
+                                    return (
+                                      <label
+                                        key={emp.id}
+                                        className="flex items-center space-x-2 text-[11px] font-semibold text-slate-800 cursor-pointer hover:text-primary"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => handleToggleEmployee(idx, emp.id)}
+                                          className="rounded text-primary focus:ring-primary h-3.5 w-3.5"
+                                        />
+                                        <span>
+                                          {emp.first_name} {emp.last_name || ""}
+                                        </span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           <td className="px-4 py-3 text-right">
@@ -2676,6 +2714,183 @@ function Billing() {
             <div className="pt-2 border-t border-border-soft flex justify-between items-center text-xs font-black text-slate-900">
               <span>Status: <span className="text-emerald-600">{readOnlyInvoiceDetail.status || "Paid"}</span></span>
               <span className="text-base text-primary font-black">Total: {formatCurrency(readOnlyInvoiceDetail.total || readOnlyInvoiceDetail.grand_total || 0)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD PRODUCT MODAL */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div
+            ref={addProductModalRef}
+            className="bg-surface border border-border-soft rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5 animate-scaleUp text-xs"
+          >
+            <div className="flex justify-between items-center border-b border-border-soft pb-3">
+              <div className="flex items-center space-x-2">
+                <Package className="w-5 h-5 text-emerald-600" />
+                <h3 className="text-sm font-extrabold text-slate-900">Add Salon Retail Product to Bill</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddProductModal(false)}
+                className="w-8 h-8 rounded-full hover:bg-background text-slate-400 hover:text-slate-600 flex items-center justify-center font-bold"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Searchable Multi-Select Product Dropdown */}
+              <div className="relative" ref={productDropdownRef}>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Product *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search or Select Product ▼"
+                    value={getProductInputValue()}
+                    onFocus={() => setIsProductDropdownOpen(true)}
+                    onClick={() => setIsProductDropdownOpen(true)}
+                    onChange={(e) => {
+                      setProductSearchQuery(e.target.value);
+                      setIsProductDropdownOpen(true);
+                    }}
+                    className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-primary pr-10 truncate cursor-pointer"
+                  />
+                  <div
+                    onClick={() => setIsProductDropdownOpen((prev) => !prev)}
+                    className="absolute right-2.5 top-2.5 p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+
+                  {/* Multi-select checklist dropdown */}
+                  {isProductDropdownOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border-soft rounded-xl shadow-xl max-h-48 overflow-y-auto divide-y divide-border-soft p-1 z-30 space-y-0.5">
+                      {products.filter((p) => p.name?.toLowerCase().includes(productSearchQuery.toLowerCase())).length === 0 ? (
+                        <div className="p-3 text-center text-slate-400 font-medium">No matching products found</div>
+                      ) : (
+                        products
+                          .filter((p) => p.name?.toLowerCase().includes(productSearchQuery.toLowerCase()))
+                          .map((prod) => {
+                            const isChecked = selectedProductIds.includes(prod.id);
+                            const isOutOfStock = prod.stock_quantity !== undefined && prod.stock_quantity <= 0;
+
+                            return (
+                              <label
+                                key={prod.id}
+                                className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition text-xs ${
+                                  isOutOfStock
+                                    ? "opacity-50 cursor-not-allowed bg-slate-50 text-slate-400"
+                                    : isChecked
+                                    ? "bg-emerald-50 text-emerald-900 font-bold"
+                                    : "hover:bg-background text-slate-800"
+                                }`}
+                              >
+                                <div className="flex items-center space-x-2.5 truncate">
+                                  <input
+                                    type="checkbox"
+                                    disabled={isOutOfStock}
+                                    checked={isChecked}
+                                    onChange={() => {
+                                      if (isOutOfStock) return;
+                                      if (isChecked) {
+                                        setSelectedProductIds((prev) => prev.filter((id) => id !== prod.id));
+                                      } else {
+                                        setSelectedProductIds((prev) => [...prev, prod.id]);
+                                        setProductQuantities((prev) => ({ ...prev, [prod.id]: prev[prod.id] || 1 }));
+                                      }
+                                    }}
+                                    className="rounded text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+                                  />
+                                  <span className="truncate">{prod.name}</span>
+                                </div>
+                                <div className="text-[11px] text-right font-medium whitespace-nowrap ml-2">
+                                  {currencySymbol} {parseFloat(prod.selling_price || prod.price || 0).toFixed(2)}{" "}
+                                  <span className="text-slate-400 font-normal">
+                                    (Stock: {prod.stock_quantity !== undefined ? prod.stock_quantity : "Avail"})
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quantity Field */}
+              {selectedProductIds.length > 0 ? (
+                <div className="space-y-2 pt-2 border-t border-border-soft">
+                  <label className="block text-xs font-bold text-slate-700">Quantity *</label>
+                  <div className="space-y-2 max-h-36 overflow-y-auto pr-1">
+                    {selectedProductIds.map((pId) => {
+                      const prod = products.find((p) => p.id === pId);
+                      if (!prod) return null;
+                      const currentQty = productQuantities[pId] || 1;
+
+                      return (
+                        <div key={pId} className="flex justify-between items-center bg-background border border-border-soft p-2.5 rounded-xl">
+                          <span className="font-bold text-slate-900 truncate max-w-[180px]">{prod.name}</span>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="number"
+                              min="1"
+                              value={currentQty}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => {
+                                const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                                setProductQuantities((prev) => ({ ...prev, [pId]: val }));
+                              }}
+                              className="w-16 bg-surface border border-border-soft px-2 py-1 rounded-lg text-xs font-bold text-slate-900 text-center focus:border-primary focus:outline-none"
+                            />
+                            <span className="text-[10px] font-medium text-slate-400">/ Stock: {prod.stock_quantity}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Quantity *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    defaultValue={1}
+                    disabled
+                    className="w-full bg-background border border-border-soft px-3.5 py-2.5 rounded-xl text-xs font-bold text-slate-400 cursor-not-allowed"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-border-soft flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setShowAddProductModal(false)}
+                className="px-4 py-2 bg-background hover:bg-slate-100 border border-border-soft rounded-xl font-bold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={selectedProductIds.length === 0}
+                onClick={() => {
+                  if (selectedProductIds.length === 0) return;
+
+                  selectedProductIds.forEach((pId) => {
+                    const qty = productQuantities[pId] || 1;
+                    handleAddProductToCart(pId, qty);
+                  });
+
+                  setShowAddProductModal(false);
+                }}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-extrabold shadow-md shadow-emerald-600/20 disabled:opacity-50"
+              >
+                Add Product
+              </button>
             </div>
           </div>
         </div>

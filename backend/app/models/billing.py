@@ -28,7 +28,7 @@ class InvoiceLineItem(db.Model, TimestampMixin):
     invoice_id = db.Column(db.Integer, db.ForeignKey("invoices.id"), nullable=False, index=True)
     service_id = db.Column(db.Integer, db.ForeignKey("services.id"), nullable=True, index=True)
     product_id = db.Column(db.Integer, db.ForeignKey("products.id"), nullable=True, index=True)
-    employee_id = db.Column(db.Integer, db.ForeignKey("employees.id"), nullable=False, index=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey("employees.id"), nullable=True, index=True)
     quantity = db.Column(db.Integer, nullable=False, default=1)
     unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
     discount_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)

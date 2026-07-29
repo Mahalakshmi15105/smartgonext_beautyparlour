@@ -41,6 +41,7 @@ def create_app(config_class=Config):
             "ALTER TABLE tenant_settings ADD COLUMN primary_color VARCHAR(30) NOT NULL DEFAULT '#EC4899'",
             "ALTER TABLE tenant_settings ADD COLUMN secondary_color VARCHAR(30) NOT NULL DEFAULT '#F472B6'",
             "ALTER TABLE tenant_settings ADD COLUMN accent_color VARCHAR(30) NOT NULL DEFAULT '#FDF2F8'",
+            "ALTER TABLE invoice_line_items MODIFY COLUMN employee_id INT NULL",
         ]
         for stmt in alters:
             try:

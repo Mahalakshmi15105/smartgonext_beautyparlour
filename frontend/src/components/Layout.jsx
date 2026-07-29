@@ -90,13 +90,17 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
   // Parlour Branding & Logo State
   const [logoUrl, setLogoUrl] = useState("");
   const [parlourName, setParlourName] = useState("");
+  const [imgFailed, setImgFailed] = useState(false);
 
   const fetchBranding = () => {
     API.get("/settings")
       .then((res) => {
         const biz = res.data.business_profile || {};
         const fullUrl = getFullImageUrl(biz.logo_url);
-        setLogoUrl(fullUrl);
+        if (fullUrl !== logoUrl) {
+          setLogoUrl(fullUrl);
+          setImgFailed(false);
+        }
         setParlourName(biz.name || user?.parlour_name || "Beauty Parlour");
         if (fullUrl) {
           localStorage.setItem("parlour_logo_url", fullUrl);
@@ -186,56 +190,52 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
         }`}
       >
         {/* Sidebar Header / Logo */}
-        <div className={`py-3.5 border-b border-border-soft flex items-center ${isCollapsed ? "justify-center px-2" : "px-5 justify-between"}`}>
+        <div className={`py-3.5 border-b border-border-soft flex items-center ${isCollapsed ? "justify-center px-2" : "px-4 justify-between"}`}>
           {isCollapsed ? (
-            <div className="relative group cursor-pointer" onClick={onNavigateHome}>
-              <div className="h-10 w-10 bg-primary-light border border-primary/20 rounded-xl flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                {logoUrl ? (
+            <div className="relative group cursor-pointer flex justify-center w-full" onClick={onNavigateHome}>
+              <div className="w-12 h-12 rounded-full border-2 border-primary/20 bg-primary-light flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+                {logoUrl && !imgFailed ? (
                   <img
                     src={logoUrl}
-                    alt="Logo"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.style.display = "none";
-                    }}
+                    alt={parlourName || "Logo"}
+                    className="w-full h-full object-cover rounded-full"
+                    onError={() => setImgFailed(true)}
                   />
                 ) : (
-                  <Building2 className="w-5 h-5 text-primary" />
+                  <div className="w-full h-full bg-primary flex items-center justify-center text-white font-extrabold text-lg rounded-full">
+                    {(parlourName || user?.parlour_name || "P").charAt(0).toUpperCase()}
+                  </div>
                 )}
               </div>
 
               {/* Hover Tooltip for Collapsed Sidebar */}
-              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-2 bg-slate-900 text-white rounded-xl shadow-2xl z-50 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs">
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3.5 py-2 bg-slate-900 text-white rounded-xl shadow-2xl z-50 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs">
                 <p className="font-extrabold text-white">{parlourName || user?.parlour_name || "Beauty Parlour"}</p>
-                <p className="text-[10px] text-primary font-bold">Powered by SmartGoNext</p>
+                <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Powered By SmartGoNext</p>
               </div>
             </div>
           ) : (
-            <div className="flex items-center space-x-3 cursor-pointer w-full" onClick={onNavigateHome}>
-              <div className="h-11 w-11 bg-primary-light border border-primary/20 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                {logoUrl ? (
+            <div className="flex items-center space-x-3 cursor-pointer w-full py-0.5" onClick={onNavigateHome}>
+              <div className="w-13 h-13 rounded-full border-2 border-primary/20 bg-primary-light flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+                {logoUrl && !imgFailed ? (
                   <img
                     src={logoUrl}
-                    alt="Logo"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.style.display = "none";
-                    }}
+                    alt={parlourName || "Logo"}
+                    className="w-full h-full object-cover rounded-full"
+                    onError={() => setImgFailed(true)}
                   />
                 ) : (
-                  <div className="h-full w-full bg-primary flex items-center justify-center text-white font-extrabold text-lg">
-                    {parlourName ? parlourName.charAt(0).toUpperCase() : "S"}
+                  <div className="w-full h-full bg-primary flex items-center justify-center text-white font-extrabold text-lg rounded-full">
+                    {(parlourName || user?.parlour_name || "P").charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
-              <div className="overflow-hidden">
-                <span className="font-black text-text-primary text-sm tracking-tight block truncate">
+              <div className="overflow-hidden leading-tight">
+                <span className="font-extrabold text-slate-900 text-sm block truncate">
                   {parlourName || user?.parlour_name || "Beauty Parlour"}
                 </span>
-                <span className="text-[10px] text-primary font-bold uppercase tracking-widest block -mt-0.5">
-                  SmartGoNext SaaS
+                <span className="text-[11px] font-semibold text-slate-500 block mt-0.5 whitespace-nowrap">
+                  Powered By SmartGoNext
                 </span>
               </div>
             </div>
@@ -244,7 +244,7 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
           {/* Toggle Expand/Collapse Button */}
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden md:flex p-1.5 rounded-xl hover:bg-background text-text-secondary hover:text-text-primary border border-border-soft transition shrink-0"
+            className="hidden md:flex p-1.5 rounded-xl hover:bg-background text-text-secondary hover:text-text-primary border border-border-soft transition shrink-0 ml-1"
             title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           >
             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -281,6 +281,28 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
             );
           })}
         </nav>
+
+        {/* Logout Footer Section for Desktop Sidebar */}
+        <div className="p-3 border-t border-border-soft shrink-0">
+          <div className="relative group">
+            <button
+              onClick={onLogout}
+              className={`w-full flex items-center ${
+                isCollapsed ? "justify-center px-2 py-3" : "space-x-3 px-3.5 py-2.5"
+              } rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-all`}
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              {!isCollapsed && <span>{t("logout") || "Logout"}</span>}
+            </button>
+
+            {/* Collapsed Tooltip */}
+            {isCollapsed && (
+              <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-slate-900 text-white rounded-lg shadow-xl z-50 whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity text-xs font-semibold">
+                {t("logout") || "Logout"}
+              </div>
+            )}
+          </div>
+        </div>
       </aside>
 
       {/* Mobile Drawer */}
@@ -291,12 +313,27 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
       >
         <div className="h-16 px-6 border-b border-border-soft flex items-center justify-between">
           <div className="flex items-center space-x-3 cursor-pointer" onClick={onNavigateHome}>
-            <div className="h-9 w-9 bg-primary rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-md">
-              <Sparkles className="w-5 h-5 text-white" />
+            <div className="w-12 h-12 rounded-full border-2 border-primary/20 bg-primary-light flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+              {logoUrl && !imgFailed ? (
+                <img
+                  src={logoUrl}
+                  alt={parlourName || "Logo"}
+                  className="w-full h-full object-cover rounded-full"
+                  onError={() => setImgFailed(true)}
+                />
+              ) : (
+                <div className="w-full h-full bg-primary flex items-center justify-center text-white font-extrabold text-base rounded-full">
+                  {(parlourName || user?.parlour_name || "P").charAt(0).toUpperCase()}
+                </div>
+              )}
             </div>
-            <div>
-              <span className="font-extrabold text-primary text-sm block">SmartGoNext</span>
-              <span className="text-[10px] text-primary font-bold uppercase tracking-wider block -mt-1">Beauty Parlour</span>
+            <div className="overflow-hidden leading-tight">
+              <span className="font-extrabold text-slate-900 text-sm block truncate">
+                {parlourName || user?.parlour_name || "Beauty Parlour"}
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500 block mt-0.5 whitespace-nowrap">
+                Powered By SmartGoNext
+              </span>
             </div>
           </div>
           <button onClick={() => setIsMobileOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold p-1">

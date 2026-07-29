@@ -464,7 +464,7 @@ export const ThermalReceipt = React.forwardRef(({ invoice, settings = {}, busine
 
         {(invoice.tax || 0) > 0 && (
           <div className="flex justify-between">
-            <span>Tax (GST):</span>
+            <span>GST (Service):</span>
             <span>{formatCurrency(invoice.tax)}</span>
           </div>
         )}

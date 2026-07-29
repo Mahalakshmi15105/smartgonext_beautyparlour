@@ -60,6 +60,8 @@ def checkout():
 
     subtotal = Decimal("0.00")
     total_discount = Decimal("0.00")
+    service_net = Decimal("0.00")
+    product_net = Decimal("0.00")
     line_items_to_save = []
     response_line_items = []
 
@@ -72,16 +74,19 @@ def checkout():
             qty = int(item.get("quantity", 1))
             emp_ids = item.get("employee_ids") or ([item.get("employee_id")] if item.get("employee_id") else [])
             benefit_id = item.get("customer_membership_id")
-            if not item_id or not emp_ids:
-                raise ValueError("Item ID and Employee assignment are required for each line.")
+            if not item_id or (item_type == "service" and not emp_ids):
+                raise ValueError("Item ID and Employee assignment are required for each service line.")
 
-            primary_emp_id = emp_ids[0]
-            # Validate Employee
-            emp = get_tenant_query(Employee).filter_by(id=primary_emp_id, status="active").first()
-            if not emp:
-                raise ValueError(f"Assigned Employee ID {primary_emp_id} is inactive or invalid.")
-            employee_id = primary_emp_id
-            emp_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+            if item_type == "service":
+                primary_emp_id = emp_ids[0]
+                emp = get_tenant_query(Employee).filter_by(id=primary_emp_id, status="active").first()
+                if not emp:
+                    raise ValueError(f"Assigned Employee ID {primary_emp_id} is inactive or invalid.")
+                employee_id = primary_emp_id
+                emp_name = f"{emp.first_name} {emp.last_name or ''}".strip()
+            else:
+                employee_id = None
+                emp_name = "—"
 
             discount_amount = Decimal("0.00")
             item_name = ""
@@ -116,6 +121,9 @@ def checkout():
                     disc_val = item.get("discount", 0)
                     discount_amount = Decimal(str(disc_val))
 
+                line_net = max(Decimal("0.00"), line_subtotal - discount_amount)
+                service_net += line_net
+
             elif item_type == "product":
                 # Lock product stock level
                 prod = db.session.query(Product).filter_by(
@@ -140,6 +148,9 @@ def checkout():
                 disc_val = item.get("discount", 0)
                 discount_amount = Decimal(str(disc_val))
 
+                line_net = max(Decimal("0.00"), line_subtotal - discount_amount)
+                product_net += line_net
+
             else:
                 raise ValueError("Line item type must be 'service' or 'product'.")
 
@@ -159,7 +170,7 @@ def checkout():
                 quantity=qty,
                 unit_price=unit_price,
                 discount_amount=discount_amount,
-                tax_amount=Decimal("0.00"),  # calculated globally or line-by-line
+                tax_amount=Decimal("0.00"),
                 line_total=line_total
             )
             line_items_to_save.append(line_item)
@@ -167,6 +178,7 @@ def checkout():
             response_line_items.append({
                 "item_name": item_name,
                 "name": item_name,
+                "type": item_type,
                 "quantity": qty,
                 "unit_price": float(unit_price),
                 "discount": float(discount_amount),
@@ -176,13 +188,9 @@ def checkout():
             })
 
         # 3. Calculate Global Taxes & Grand Total
-        # Apply tax on net subtotal (subtotal - discount)
-        net_amount = subtotal - total_discount
-        if net_amount < 0:
-            net_amount = Decimal("0.00")
-
-        calculated_tax = net_amount * (tax_rate / Decimal("100.00"))
-        grand_total = net_amount + calculated_tax
+        # BUSINESS RULE #6: Apply GST/Tax ONLY to Services. Products have 0 GST/Tax.
+        calculated_tax = service_net * (tax_rate / Decimal("100.00"))
+        grand_total = service_net + calculated_tax + product_net
 
         # 4. Verify Payment splits match grand total
         payment_total = Decimal("0.00")
