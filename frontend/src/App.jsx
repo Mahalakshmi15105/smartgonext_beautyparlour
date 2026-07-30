@@ -13,6 +13,8 @@ import Dashboard from "./pages/Dashboard";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Notifications from "./pages/Notifications";
+import WhatsAppIntegration from "./pages/WhatsAppIntegration";
+import WhatsAppCampaigns from "./pages/WhatsAppCampaigns";
 import SuperAdmin from "./pages/SuperAdmin";
 import LandingPage from "./pages/LandingPage";
 import Register from "./pages/Register";
@@ -98,13 +100,14 @@ function App() {
   if (currentView === "register") {
     return (
       <Register
-        onSuccess={(newToken, newUser) => {
+        onRegisterSuccess={(newToken, newUser) => {
           setToken(newToken);
           setUser(newUser);
           setCurrentView("app");
           setActiveTab("dashboard");
         }}
-        onCancel={() => setCurrentView("landing")}
+        onNavigateLogin={() => setCurrentView("login")}
+        onNavigateHome={() => setCurrentView("landing")}
       />
     );
   }
@@ -287,6 +290,11 @@ function App() {
       case "membership_plans":
       case "customer_memberships":
         return <MembershipManagement />;
+      case "marketing":
+      case "whatsapp_campaigns":
+        return <WhatsAppCampaigns />;
+      case "whatsapp_integration":
+        return <WhatsAppIntegration />;
       case "reports":
         return <Reports />;
       case "settings":

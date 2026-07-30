@@ -20,6 +20,7 @@ import {
   CalendarClock,
   UserRoundX,
   Building2,
+  Send,
   X,
 } from "lucide-react";
 import API from "../services/api";
@@ -46,6 +47,9 @@ const getMenuIcon = (id) => {
       return <Award className="w-4 h-4 shrink-0" />;
     case "notifications":
       return <Bell className="w-4 h-4 shrink-0" />;
+    case "marketing":
+    case "whatsapp_campaigns":
+      return <Send className="w-4 h-4 shrink-0" />;
     case "reports":
       return <BarChart3 className="w-4 h-4 shrink-0" />;
     case "settings":
@@ -168,6 +172,7 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
     { id: "catalog", labelKey: "services_products", defaultLabel: "Services & Products" },
     { id: "memberships", labelKey: "membership_management", defaultLabel: "Membership Management" },
     { id: "notifications", labelKey: "notifications", defaultLabel: "Notifications" },
+    { id: "marketing", labelKey: "whatsapp_marketing", defaultLabel: "WhatsApp Campaigns" },
     { id: "reports", labelKey: "reports", defaultLabel: "Reports" },
     { id: "settings", labelKey: "settings", defaultLabel: "Settings" },
   ];
@@ -284,6 +289,16 @@ function Layout({ children, activeTab, setActiveTab, onLogout, onNavigateHome, u
 
         {/* Logout Footer Section for Desktop Sidebar */}
         <div className="p-3 border-t border-border-soft shrink-0">
+          {!isCollapsed && user && (
+            <div className="px-3.5 py-2 mb-2 text-left border-b border-border-soft/40 pb-2.5">
+              <p className="text-xs font-bold text-slate-800 truncate">
+                {user.owner_name || "Parlour Owner"}
+              </p>
+              <p className="text-[10px] text-slate-500 font-semibold truncate">
+                {user.role === "ParlourAdmin" ? "Parlour Owner" : user.role || ""}
+              </p>
+            </div>
+          )}
           <div className="relative group">
             <button
               onClick={onLogout}

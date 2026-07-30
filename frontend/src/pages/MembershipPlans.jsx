@@ -17,6 +17,7 @@ function MembershipPlans() {
   const [cursor, setCursor] = useState(null);
   const [cursorHistory, setCursorHistory] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
+  const [services, setServices] = useState([]);
 
   // Form Modal Toggle
   const [showModal, setShowModal] = useState(false);
@@ -29,8 +30,9 @@ function MembershipPlans() {
     price: "",
     duration_days: "365",
     service_discount_percentage: "0",
-    product_discount_percentage: "0",
     status: "active",
+    day_restrictions: [],
+    eligible_services: [],
   });
 
   useModalFocusTrap(showModal, modalRef, () => setShowModal(false));
@@ -38,6 +40,14 @@ function MembershipPlans() {
     const submitBtn = modalRef.current?.querySelector('button[type="submit"]');
     if (submitBtn) submitBtn.click();
   });
+
+  useEffect(() => {
+    API.get("/services?limit=100")
+      .then((res) => {
+        setServices(res.data.items || []);
+      })
+      .catch((err) => console.error("Failed to load services:", err));
+  }, []);
 
   const fetchPlans = (currentCursor = null) => {
     setLoading(true);
@@ -88,8 +98,9 @@ function MembershipPlans() {
       price: "",
       duration_days: "365",
       service_discount_percentage: "0",
-      product_discount_percentage: "0",
       status: "active",
+      day_restrictions: [],
+      eligible_services: [],
     });
     setShowModal(true);
   };
@@ -102,8 +113,9 @@ function MembershipPlans() {
       price: p.price || "",
       duration_days: p.duration_days || "365",
       service_discount_percentage: p.service_discount_percentage || "0",
-      product_discount_percentage: p.product_discount_percentage || "0",
       status: p.status || "active",
+      day_restrictions: p.day_restrictions || [],
+      eligible_services: p.eligible_services || [],
     });
     setShowModal(true);
   };
@@ -118,7 +130,8 @@ function MembershipPlans() {
         fetchPlans(cursor);
       })
       .catch((err) => {
-        alert(err.message || "Operation failed.");
+        const errMsg = err.response?.data?.message || err.message || "Operation failed.";
+        alert(errMsg);
       });
   };
 
@@ -195,7 +208,6 @@ function MembershipPlans() {
                   <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Price</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Validity</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Svc Disc %</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Prod Disc %</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Status</th>
                   <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Actions</th>
                 </tr>
@@ -212,7 +224,6 @@ function MembershipPlans() {
                     <td className="px-6 py-4 text-sm text-text-secondary">{formatCurrency(p.price)}</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{p.duration_days} Days</td>
                     <td className="px-6 py-4 text-sm text-text-secondary">{p.service_discount_percentage}%</td>
-                    <td className="px-6 py-4 text-sm text-text-secondary">{p.product_discount_percentage}%</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                         p.status === "active" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
@@ -257,8 +268,8 @@ function MembershipPlans() {
       {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div ref={modalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
-            <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
+          <div ref={modalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center shrink-0">
               <h3 className="text-md font-semibold text-text-primary">
                 {editId ? "Edit Membership Plan" : "Create Membership Plan"}
               </h3>
@@ -266,90 +277,152 @@ function MembershipPlans() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form ref={formRef} onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Plan Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Gold VIP Plan"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Description</label>
-                <textarea
-                  rows="2"
-                  placeholder="Brief overview of plan benefits..."
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                ></textarea>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+            <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Price ({currencySymbol}) *</label>
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Plan Name *</label>
                   <input
-                    type="number"
-                    step="0.01"
+                    type="text"
                     required
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    placeholder="e.g. Gold VIP Plan"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Validity (Days) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={formData.duration_days}
-                    onChange={(e) => setFormData({ ...formData, duration_days: e.target.value })}
+                  <label className="block text-xs font-semibold text-text-secondary mb-1">Description</label>
+                  <textarea
+                    rows="2"
+                    placeholder="Brief overview of plan benefits..."
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  />
+                  ></textarea>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1">Price ({currencySymbol}) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={formData.price}
+                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1">Validity (Days) *</label>
+                    <input
+                      type="number"
+                      required
+                      value={formData.duration_days}
+                      onChange={(e) => setFormData({ ...formData, duration_days: e.target.value })}
+                      className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1">Service Discount %</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={formData.service_discount_percentage}
+                      onChange={(e) => setFormData({ ...formData, service_discount_percentage: e.target.value })}
+                      className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-text-secondary mb-1">Status</label>
+                    <select
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                      className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                    >
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Day Restrictions Checklist (Optional) */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-text-secondary">Day Restrictions (Optional - Membership not valid on checked days)</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => {
+                      const isChecked = formData.day_restrictions.includes(day);
+                      return (
+                        <label key={day} className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition ${
+                          isChecked 
+                            ? "bg-pink-50 border-pink-200 text-pink-700 font-semibold"
+                            : "bg-background border-border-soft text-slate-600 hover:bg-slate-50"
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const list = [...formData.day_restrictions];
+                              if (e.target.checked) {
+                                list.push(day);
+                              } else {
+                                const idx = list.indexOf(day);
+                                if (idx > -1) list.splice(idx, 1);
+                              }
+                              setFormData({ ...formData, day_restrictions: list });
+                            }}
+                            className="rounded text-pink-600 focus:ring-pink-500 w-3.5 h-3.5"
+                          />
+                          <span>{day}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Eligible Services Catalog Checklist (Optional) */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-text-secondary">Eligible Services (Optional)</label>
+                  <div className="border border-border-soft rounded-lg p-2 max-h-32 overflow-y-auto space-y-1 bg-background text-xs">
+                    {services.length === 0 ? (
+                      <p className="text-slate-400 p-1 text-[11px]">No services available in catalog.</p>
+                    ) : (
+                      services.map((svc) => {
+                        const isChecked = formData.eligible_services.includes(svc.id);
+                        return (
+                          <label key={svc.id} className={`flex items-center space-x-2 p-1.5 rounded-md cursor-pointer select-none transition ${
+                            isChecked ? "bg-slate-100/80 font-bold" : "hover:bg-slate-50"
+                          }`}>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const list = [...formData.eligible_services];
+                                if (e.target.checked) {
+                                  list.push(svc.id);
+                                } else {
+                                  const idx = list.indexOf(svc.id);
+                                  if (idx > -1) list.splice(idx, 1);
+                                }
+                                setFormData({ ...formData, eligible_services: list });
+                              }}
+                              className="rounded text-pink-600 focus:ring-pink-500 w-3.5 h-3.5"
+                            />
+                            <span className="text-slate-700">{svc.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                  <p className="text-[10px] text-text-secondary">Leave all unchecked to apply to all services.</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Service Discount %</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formData.service_discount_percentage}
-                    onChange={(e) => setFormData({ ...formData, service_discount_percentage: e.target.value })}
-                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-text-secondary mb-1">Product Discount %</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={formData.product_discount_percentage}
-                    onChange={(e) => setFormData({ ...formData, product_discount_percentage: e.target.value })}
-                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
-              </div>
-
-              <div className="pt-4 border-t border-border-soft flex justify-end space-x-3">
+              <div className="p-6 border-t border-border-soft flex justify-end space-x-3 shrink-0 bg-slate-50/50">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}

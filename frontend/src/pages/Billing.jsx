@@ -82,6 +82,8 @@ function Billing() {
   const [selectedGender, setSelectedGender] = useState("Female");
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [selectedServiceId, setSelectedServiceId] = useState("");
+  const [activeMembership, setActiveMembership] = useState(null);
+  const [useMembership, setUseMembership] = useState(true);
   const [selectedProductId, setSelectedProductId] = useState("");
 
   const productSelectRef = useRef(null);
@@ -466,11 +468,28 @@ function Billing() {
 
   const handleCustomerChange = (customerIdStr) => {
     setSelectedCustomerId(customerIdStr);
-    if (!customerIdStr) return;
+    setActiveMembership(null);
+    if (!customerIdStr || customerIdStr === "walkin") return;
     const cust = customers.find((c) => c.id === parseInt(customerIdStr));
     if (cust && cust.gender) {
       setSelectedGender(cust.gender);
     }
+
+    API.get(`/customers/${customerIdStr}/history`)
+      .then((res) => {
+        const memberships = res.data.memberships || [];
+        const active = memberships.find((m) => m.status === "active");
+        if (active) {
+          const weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+          const todayName = weekdays[new Date().getDay()];
+          const isDayRestricted = (active.day_restrictions || []).includes(todayName);
+          setActiveMembership({
+            ...active,
+            isDayRestricted
+          });
+        }
+      })
+      .catch((err) => console.error("Failed to load customer membership detail:", err));
   };
 
   const handleAddServiceToCart = (serviceIdToUse) => {
@@ -613,9 +632,25 @@ function Billing() {
   };
 
   // Computations
+  const getEffectiveDiscountPercent = (item) => {
+    if (useMembership && activeMembership && !activeMembership.isDayRestricted) {
+      if (item.type === "service") {
+        // If eligible_services is empty/null, it applies to all services.
+        const isEligible = !activeMembership.eligible_services || 
+                          activeMembership.eligible_services.length === 0 || 
+                          activeMembership.eligible_services.includes(item.item_id || item.id);
+        if (isEligible) {
+          return parseFloat(activeMembership.service_discount_percentage || 0);
+        }
+      }
+    }
+    return item.discount_percent || 0;
+  };
+
   const calculateRowDiscountAmount = (item) => {
     const lineGross = item.gross_amount * item.quantity;
-    return (lineGross * (item.discount_percent || 0)) / 100;
+    const effPercent = getEffectiveDiscountPercent(item);
+    return (lineGross * effPercent) / 100;
   };
 
   const calculateRowNet = (item) => {
@@ -720,6 +755,8 @@ function Billing() {
           amount: parseFloat(val) || 0,
         }))
         .filter((p) => p.amount > 0),
+      membership_name: useMembership && activeMembership && !activeMembership.isDayRestricted ? activeMembership.plan_name : null,
+      membership_discount: useMembership && activeMembership && !activeMembership.isDayRestricted ? totalDiscount : 0,
     };
 
     setLoading(true);
@@ -900,7 +937,7 @@ function Billing() {
       return;
     }
     API.post("/reminders", {
-      customer_id: selectedInvoiceDetail.customer.id || selectedInvoiceDetail.customer_id,
+      customer_id: selectedInvoiceDetail?.customer?.id || selectedInvoiceDetail?.customer_id,
       invoice_id: selectedInvoiceDetail.id,
       reminder_type: reminderType,
       reminder_date: reminderDate,
@@ -908,7 +945,7 @@ function Billing() {
     })
       .then(() => {
         setShowReminderModal(false);
-        setActionNotice(`Reminder saved for ${selectedInvoiceDetail.customer.first_name} on ${reminderDate}!`);
+        setActionNotice(`Reminder saved for ${selectedInvoiceDetail?.customer?.first_name || "Guest"} on ${reminderDate}!`);
         setTimeout(() => setActionNotice(null), 4000);
       })
       .catch((err) => alert(err.message || "Failed to save reminder."));
@@ -916,7 +953,7 @@ function Billing() {
 
   const handleSaveFeedbackSubmit = () => {
     API.post("/feedback", {
-      customer_id: selectedInvoiceDetail.customer.id || selectedInvoiceDetail.customer_id,
+      customer_id: selectedInvoiceDetail?.customer?.id || selectedInvoiceDetail?.customer_id,
       invoice_id: selectedInvoiceDetail.id,
       rating: feedbackRating,
       comments: feedbackComments,
@@ -1175,6 +1212,66 @@ function Billing() {
                 </span>
               </div>
             </div>
+
+            {/* Membership Info & Decision Section */}
+            {activeMembership && (
+              <div className="mt-4 border-t border-border-soft/60 pt-4 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-50/50 p-4 rounded-xl border border-slate-100 space-y-3 md:space-y-0">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-pink-100 text-pink-700 rounded-lg">
+                    <Crown className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">{activeMembership.plan_name}</h4>
+                      {activeMembership.isDayRestricted ? (
+                        <span className="bg-red-50 text-red-600 border border-red-100 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          Restricted Today
+                        </span>
+                      ) : (
+                        <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Benefits: {activeMembership.service_discount_percentage}% Service Discount • Expires: {activeMembership.expiry_date}
+                    </p>
+                    {activeMembership.isDayRestricted && (
+                      <p className="text-[10px] text-red-500 font-medium mt-0.5">
+                        ⚠️ Not applicable on {new Date().toLocaleDateString('en-US', { weekday: 'long' })}s.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {!activeMembership.isDayRestricted && (
+                  <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setUseMembership(true)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        useMembership
+                          ? "bg-pink-600 text-white shadow-xs"
+                          : "bg-white text-slate-600 border border-border-soft hover:bg-slate-50"
+                      }`}
+                    >
+                      Use Membership
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUseMembership(false)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        !useMembership
+                          ? "bg-slate-700 text-white shadow-xs"
+                          : "bg-white text-slate-600 border border-border-soft hover:bg-slate-50"
+                      }`}
+                    >
+                      Pay Normally
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Step 3 & 4: Category & Service Selection */}
@@ -1844,10 +1941,10 @@ function Billing() {
             <div className="flex justify-between items-center border-b border-border-soft pb-3">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900">
-                  Invoice Details #{selectedInvoiceDetail.invoice_number}
+                  Invoice Details #{selectedInvoiceDetail.invoice_number || ""}
                 </h3>
                 <p className="text-[10px] text-text-secondary">
-                  Customer: {selectedInvoiceDetail.customer.first_name} {selectedInvoiceDetail.customer.last_name || ""} ({selectedInvoiceDetail.customer.phone})
+                  Customer: {selectedInvoiceDetail.customer?.first_name || "Guest"} {selectedInvoiceDetail.customer?.last_name || ""} ({selectedInvoiceDetail.customer?.phone || "N/A"})
                 </p>
               </div>
               <button onClick={() => setSelectedInvoiceDetail(null)} className="text-slate-400 hover:text-slate-600 font-bold p-1">
@@ -1859,15 +1956,15 @@ function Billing() {
             <div className="space-y-2">
               <p className="text-xs font-bold text-slate-700 uppercase">Treatment Line Items:</p>
               <div className="bg-background border border-border-soft rounded-xl p-3 space-y-2 max-h-36 overflow-y-auto text-xs">
-                {selectedInvoiceDetail.line_items.map((li) => (
+                {(selectedInvoiceDetail.line_items || []).map((li) => (
                   <div key={li.id} className="flex justify-between items-center border-b border-border-soft/50 pb-1">
                     <div>
                       <span className="font-bold text-slate-900">{li.name}</span>
                       <span className="text-[10px] text-text-secondary block">
-                        Qty: {li.quantity} × {currencySymbol}{li.unit_price} (Stylist: {li.employee_name})
+                        Qty: {li.quantity} × {currencySymbol}{li.unit_price} (Stylist: {li.employee_name || "N/A"})
                       </span>
                     </div>
-                    <span className="font-extrabold text-slate-900">{currencySymbol} {li.line_total.toFixed(2)}</span>
+                    <span className="font-extrabold text-slate-900">{currencySymbol} {(li.line_total || 0).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
@@ -1877,19 +1974,19 @@ function Billing() {
             <div className="bg-primary-light/50 border border-primary/20 p-3 rounded-xl space-y-1 text-xs">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span className="font-bold">{currencySymbol} {selectedInvoiceDetail.subtotal.toFixed(2)}</span>
+                <span className="font-bold">{currencySymbol} {(selectedInvoiceDetail.subtotal || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-danger">
                 <span>Discount:</span>
-                <span className="font-bold">-{currencySymbol} {selectedInvoiceDetail.discount.toFixed(2)}</span>
+                <span className="font-bold">-{currencySymbol} {(selectedInvoiceDetail.discount || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Tax:</span>
-                <span className="font-bold">{currencySymbol} {selectedInvoiceDetail.tax.toFixed(2)}</span>
+                <span className="font-bold">{currencySymbol} {(selectedInvoiceDetail.tax || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm font-extrabold text-primary border-t border-border-soft pt-1">
                 <span>Grand Total:</span>
-                <span>{currencySymbol} {selectedInvoiceDetail.total.toFixed(2)}</span>
+                <span>{currencySymbol} {(selectedInvoiceDetail.total || 0).toFixed(2)}</span>
               </div>
             </div>
 

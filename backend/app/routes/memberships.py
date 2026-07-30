@@ -1,6 +1,7 @@
 from flask import Blueprint, request, g
+import json
 from app.database import db
-from app.models.membership import MembershipPlan, CustomerMembership, MembershipBenefit
+from app.models.membership import MembershipPlan, CustomerMembership, MembershipBenefit, MembershipPlanService
 from app.models.catalog import Service
 from app.models.customer import Customer
 from app.utils.responses import success_response, error_response
@@ -60,8 +61,9 @@ def get_plans():
             "price": float(p.price),
             "duration_days": p.duration_days,
             "service_discount_percentage": float(p.service_discount_percentage),
-            "product_discount_percentage": float(p.product_discount_percentage),
             "status": p.status,
+            "day_restrictions": json.loads(p.day_restrictions) if p.day_restrictions else [],
+            "eligible_services": [es.service_id for es in p.eligible_services],
             "created_at": p.created_at.isoformat()
         } for p in plans
     ]
@@ -89,8 +91,9 @@ def get_plan(plan_id):
         "price": float(plan.price),
         "duration_days": plan.duration_days,
         "service_discount_percentage": float(plan.service_discount_percentage),
-        "product_discount_percentage": float(plan.product_discount_percentage),
-        "status": plan.status
+        "status": plan.status,
+        "day_restrictions": json.loads(plan.day_restrictions) if plan.day_restrictions else [],
+        "eligible_services": [es.service_id for es in plan.eligible_services]
     })
 
 
@@ -102,7 +105,6 @@ def create_plan():
     price = data.get("price", 0.00)
     duration = data.get("duration_days", 365)
     svc_disc = data.get("service_discount_percentage", 0.00)
-    prod_disc = data.get("product_discount_percentage", 0.00)
 
     if not name:
         return error_response(
@@ -115,8 +117,7 @@ def create_plan():
         price_val = float(price)
         dur_val = int(duration)
         svc_disc_val = float(svc_disc)
-        prod_disc_val = float(prod_disc)
-        if price_val < 0 or dur_val <= 0 or svc_disc_val < 0 or prod_disc_val < 0:
+        if price_val < 0 or dur_val <= 0 or svc_disc_val < 0:
             raise ValueError()
     except ValueError:
         return error_response(
@@ -134,6 +135,9 @@ def create_plan():
             status_code=400
         )
 
+    day_restrictions = data.get("day_restrictions", [])
+    eligible_services_ids = data.get("eligible_services", [])
+
     try:
         plan = MembershipPlan(
             tenant_id=g.parlour_id,
@@ -142,17 +146,28 @@ def create_plan():
             price=price_val,
             duration_days=dur_val,
             service_discount_percentage=svc_disc_val,
-            product_discount_percentage=prod_disc_val,
-            status=data.get("status", "active")
+            product_discount_percentage=0.00,
+            status=data.get("status", "active"),
+            day_restrictions=json.dumps(day_restrictions) if day_restrictions else None
         )
         db.session.add(plan)
+        db.session.flush() # Fetch plan.id for junction mapping
+
+        for svc_id in eligible_services_ids:
+            mapping = MembershipPlanService(
+                tenant_id=g.parlour_id,
+                membership_plan_id=plan.id,
+                service_id=int(svc_id)
+            )
+            db.session.add(mapping)
+
         db.session.commit()
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error creating plan: {str(e)}")
         return error_response(
             error_code="DATABASE_ERROR",
-            message="Failed to create plan.",
+            message=f"Failed to create plan: {str(e)}",
             status_code=500
         )
 
@@ -175,7 +190,6 @@ def update_plan(plan_id):
     price = data.get("price", 0.00)
     duration = data.get("duration_days", 365)
     svc_disc = data.get("service_discount_percentage", 0.00)
-    prod_disc = data.get("product_discount_percentage", 0.00)
 
     if not name:
         return error_response(
@@ -188,8 +202,7 @@ def update_plan(plan_id):
         price_val = float(price)
         dur_val = int(duration)
         svc_disc_val = float(svc_disc)
-        prod_disc_val = float(prod_disc)
-        if price_val < 0 or dur_val <= 0 or svc_disc_val < 0 or prod_disc_val < 0:
+        if price_val < 0 or dur_val <= 0 or svc_disc_val < 0:
             raise ValueError()
     except ValueError:
         return error_response(
@@ -207,21 +220,36 @@ def update_plan(plan_id):
             status_code=400
         )
 
+    day_restrictions = data.get("day_restrictions", [])
+    eligible_services_ids = data.get("eligible_services", [])
+
     try:
         plan.name = name
         plan.description = data.get("description")
         plan.price = price_val
         plan.duration_days = dur_val
         plan.service_discount_percentage = svc_disc_val
-        plan.product_discount_percentage = prod_disc_val
+        plan.product_discount_percentage = 0.00
         plan.status = data.get("status", "active")
+        plan.day_restrictions = json.dumps(day_restrictions) if day_restrictions else None
+
+        # Sync eligible services junction mapping
+        MembershipPlanService.query.filter_by(membership_plan_id=plan.id).delete()
+        for svc_id in eligible_services_ids:
+            mapping = MembershipPlanService(
+                tenant_id=g.parlour_id,
+                membership_plan_id=plan.id,
+                service_id=int(svc_id)
+            )
+            db.session.add(mapping)
+
         db.session.commit()
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error updating plan: {str(e)}")
         return error_response(
             error_code="DATABASE_ERROR",
-            message="Failed to update plan.",
+            message=f"Failed to update plan: {str(e)}",
             status_code=500
         )
 
@@ -460,3 +488,34 @@ def cancel_membership(cm_id):
         )
 
     return success_response({"message": "Membership cancelled successfully."})
+
+
+@memberships_bp.route("/memberships", methods=["GET"])
+@require_role(["ParlourAdmin"])
+def get_all_memberships():
+    query = CustomerMembership.query.filter_by(tenant_id=g.parlour_id).order_by(CustomerMembership.id.desc())
+    
+    results = []
+    for cm in query.all():
+        benefits = []
+        for b in cm.benefits:
+            benefits.append({
+                "id": b.id,
+                "service_id": b.service_id,
+                "service_name": b.service.name if b.service else None,
+                "total_quantity": b.total_quantity,
+                "remaining_quantity": b.remaining_quantity
+            })
+            
+        results.append({
+            "id": cm.id,
+            "customer_id": cm.customer_id,
+            "customer_name": f"{cm.customer.first_name} {cm.customer.last_name or ''}".strip() if cm.customer else "Unknown Customer",
+            "customer_phone": cm.customer.phone if cm.customer else "No Phone",
+            "plan_id": cm.membership_plan_id,
+            "plan_name": cm.plan.name if cm.plan else "Default Membership",
+            "expires_at": cm.expires_at.isoformat(),
+            "status": cm.status,
+            "benefits": benefits
+        })
+    return success_response(results)

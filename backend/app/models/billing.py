@@ -13,6 +13,8 @@ class Invoice(db.Model, TimestampMixin):
     tax = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
     total = db.Column(db.Numeric(10, 2), nullable=False, default=0.00)
     status = db.Column(db.String(50), nullable=False, default="Paid")  # Paid, Partial, Voided
+    membership_name = db.Column(db.String(100), nullable=True)
+    membership_discount = db.Column(db.Numeric(10, 2), nullable=True)
 
     # Relationships
     customer = db.relationship("Customer", back_populates="invoices")

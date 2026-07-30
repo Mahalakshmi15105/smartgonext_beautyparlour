@@ -489,6 +489,7 @@ def get_customer_history(customer_id):
     active_membership_name = None
     active_membership_status = "Inactive"
 
+    import json
     for m in memberships:
         plan_name = m.plan.name if m.plan else "Membership Plan"
         if m.status == "active" and not active_membership_name:
@@ -509,6 +510,9 @@ def get_customer_history(customer_id):
             "start_date": m.created_at.strftime("%Y-%m-%d"),
             "expiry_date": m.expires_at.strftime("%Y-%m-%d") if m.expires_at else "N/A",
             "status": m.status,
+            "service_discount_percentage": float(m.plan.service_discount_percentage) if m.plan else 0.0,
+            "day_restrictions": json.loads(m.plan.day_restrictions) if (m.plan and m.plan.day_restrictions) else [],
+            "eligible_services": [es.service_id for es in m.plan.eligible_services] if m.plan else [],
             "benefits": benefits
         })
 

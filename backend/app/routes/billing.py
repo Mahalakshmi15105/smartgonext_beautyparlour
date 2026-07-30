@@ -224,7 +224,9 @@ def checkout():
             discount=total_discount,
             tax=calculated_tax,
             total=grand_total,
-            status=invoice_status
+            status=invoice_status,
+            membership_name=data.get("membership_name"),
+            membership_discount=Decimal(str(data.get("membership_discount", 0.00))) if data.get("membership_discount") else Decimal("0.00")
         )
         db.session.add(invoice)
         db.session.flush()  # obtain invoice.id
@@ -284,7 +286,9 @@ def checkout():
         "tax": float(invoice.tax),
         "total": float(invoice.total),
         "status": invoice.status,
-        "payments": response_payments
+        "payments": response_payments,
+        "membership_name": invoice.membership_name,
+        "membership_discount": float(invoice.membership_discount or 0)
     }, 201)
 
 
@@ -324,6 +328,8 @@ def get_invoices():
             "tax": float(inv.tax),
             "total": float(inv.total),
             "status": inv.status,
+            "membership_name": inv.membership_name,
+            "membership_discount": float(inv.membership_discount or 0),
             "created_at": inv.created_at.isoformat()
         } for inv in invoices
     ]
@@ -392,7 +398,9 @@ def get_invoice(invoice_id):
         "status": invoice.status,
         "created_at": invoice.created_at.isoformat(),
         "line_items": lines,
-        "payments": payments
+        "payments": payments,
+        "membership_name": invoice.membership_name,
+        "membership_discount": float(invoice.membership_discount or 0)
     })
 
 

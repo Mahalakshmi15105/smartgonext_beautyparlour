@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import API from "../services/api";
 import { useLanguageCurrency } from "../context/LanguageCurrencyContext";
 import { useModalFocusTrap, useFormKeyboardNavigation } from "../utils/keyboardNavigation";
-import { User, X } from "lucide-react";
+import { User, X, ChevronDown, Check } from "lucide-react";
 
 function CustomerMemberships() {
   const { formatCurrency, currencySymbol, t } = useLanguageCurrency();
@@ -10,11 +10,12 @@ function CustomerMemberships() {
   const assignFormRef = useRef(null);
   const upgradeModalRef = useRef(null);
 
-  const [customers, setCustomers] = useState([]);
   const [plans, setPlans] = useState([]);
   const [services, setServices] = useState([]);
+  const [allCustomers, setAllCustomers] = useState([]);
+  const [allMemberships, setAllMemberships] = useState([]);
 
-  // Assignment Modal
+  // Assignment Modal State
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [assignForm, setAssignForm] = useState({
     customer_id: "",
@@ -22,20 +23,24 @@ function CustomerMemberships() {
     benefits: [], // array of { service_id, quantity }
   });
 
+  // Combobox customer dropdown inside modal
+  const [comboboxSearch, setComboboxSearch] = useState("");
+  const [showComboboxDropdown, setShowComboboxDropdown] = useState(false);
+  const comboboxRef = useRef(null);
+
   // Action Modals (Renew / Upgrade)
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [activeMembershipId, setActiveMembershipId] = useState(null);
   const [upgradePlanId, setUpgradePlanId] = useState("");
   const [upgradeBenefits, setUpgradeBenefits] = useState([]);
 
-  // Search Customer for View
+  // View Specific Customer Packages
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerSearch, setCustomerSearch] = useState("");
+  const [customers, setCustomers] = useState([]);
   const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  const [allCustomers, setAllCustomers] = useState([]);
-  const [modalCustomerSearch, setModalCustomerSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useModalFocusTrap(showAssignModal, assignModalRef, () => setShowAssignModal(false));
   useModalFocusTrap(showUpgradeModal, upgradeModalRef, () => setShowUpgradeModal(false));
@@ -44,13 +49,35 @@ function CustomerMemberships() {
     if (submitBtn) submitBtn.click();
   });
 
-  useEffect(() => {
-    API.get("/membership-plans?status=active").then((res) => setPlans(res.data.items || []));
-    API.get("/services?status=active").then((res) => setServices(res.data.items || []));
+  // Fetch initial collections
+  const fetchAllMemberships = () => {
+    API.get("/memberships")
+      .then((res) => setAllMemberships(res.data || []))
+      .catch((err) => console.error("Failed to load all memberships:", err));
+  };
+
+  const fetchPlans = () => {
+    API.get("/membership-plans?status=active").then((res) => {
+      const fetchedPlans = res.data.items || [];
+      setPlans(fetchedPlans);
+      if (fetchedPlans.length > 0) {
+        setAssignForm(prev => ({ ...prev, plan_id: fetchedPlans[0].id.toString() }));
+      }
+    });
+  };
+
+  const fetchCustomers = () => {
     API.get("/customers?limit=100").then((res) => setAllCustomers(res.data.items || []));
+  };
+
+  useEffect(() => {
+    fetchPlans();
+    API.get("/services?status=active").then((res) => setServices(res.data.items || []));
+    fetchCustomers();
+    fetchAllMemberships();
   }, []);
 
-  // Customer Autocomplete Lookup
+  // Customer Autocomplete Lookup for the View Specific section
   useEffect(() => {
     if (customerSearch.trim().length >= 2) {
       API.get(`/customers?q=${customerSearch}`).then((res) => setCustomers(res.data.items || []));
@@ -59,13 +86,24 @@ function CustomerMemberships() {
     }
   }, [customerSearch]);
 
+  // Click outside Combobox dropdown handler
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (comboboxRef.current && !comboboxRef.current.contains(event.target)) {
+        setShowComboboxDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   // Load customer's active memberships
   const fetchCustomerMemberships = (cust) => {
     setSelectedCustomer(cust);
     setLoading(true);
     API.get(`/customers/${cust.id}/memberships`)
       .then((res) => {
-        setMemberships(res.data);
+        setMemberships(res.data || []);
         setLoading(false);
       })
       .catch((err) => {
@@ -100,9 +138,28 @@ function CustomerMemberships() {
 
   const handleAssignSubmit = (e) => {
     e.preventDefault();
+    if (!assignForm.customer_id) {
+      alert("Please select a customer first.");
+      return;
+    }
+    if (!assignForm.plan_id) {
+      alert("Please select a membership plan.");
+      return;
+    }
+
+    setSubmitting(true);
     API.post("/memberships/assign", assignForm)
       .then(() => {
+        setSubmitting(false);
         setShowAssignModal(false);
+        setComboboxSearch("");
+        setAssignForm({
+          customer_id: "",
+          plan_id: plans.length > 0 ? plans[0].id.toString() : "",
+          benefits: [],
+        });
+        fetchAllMemberships();
+        fetchCustomers();
         if (selectedCustomer && selectedCustomer.id === parseInt(assignForm.customer_id)) {
           fetchCustomerMemberships(selectedCustomer);
         } else {
@@ -110,7 +167,9 @@ function CustomerMemberships() {
         }
       })
       .catch((err) => {
-        alert(err.message || "Failed to assign membership.");
+        setSubmitting(false);
+        const errMsg = err.response?.data?.message || err.message || "Failed to assign membership.";
+        alert(errMsg);
       });
   };
 
@@ -118,9 +177,14 @@ function CustomerMemberships() {
     if (window.confirm("Are you sure you want to renew this membership? Renewal extends expiry date and resets benefit balances.")) {
       API.post(`/memberships/${cmId}/renew`)
         .then(() => {
-          fetchCustomerMemberships(selectedCustomer);
+          fetchAllMemberships();
+          if (selectedCustomer) {
+            fetchCustomerMemberships(selectedCustomer);
+          } else {
+            alert("Membership renewed successfully.");
+          }
         })
-        .catch((err) => alert(err.message || "Failed to renew."));
+        .catch((err) => alert(err.response?.data?.message || err.message || "Failed to renew."));
     }
   };
 
@@ -128,9 +192,14 @@ function CustomerMemberships() {
     if (window.confirm("Are you sure you want to cancel this customer membership?")) {
       API.post(`/memberships/${cmId}/cancel`)
         .then(() => {
-          fetchCustomerMemberships(selectedCustomer);
+          fetchAllMemberships();
+          if (selectedCustomer) {
+            fetchCustomerMemberships(selectedCustomer);
+          } else {
+            alert("Membership cancelled successfully.");
+          }
         })
-        .catch((err) => alert(err.message || "Failed to cancel."));
+        .catch((err) => alert(err.response?.data?.message || err.message || "Failed to cancel."));
     }
   };
 
@@ -149,9 +218,14 @@ function CustomerMemberships() {
     })
       .then(() => {
         setShowUpgradeModal(false);
-        fetchCustomerMemberships(selectedCustomer);
+        fetchAllMemberships();
+        if (selectedCustomer) {
+          fetchCustomerMemberships(selectedCustomer);
+        } else {
+          alert("Membership upgraded successfully.");
+        }
       })
-      .catch((err) => alert(err.message || "Failed to upgrade."));
+      .catch((err) => alert(err.response?.data?.message || err.message || "Failed to upgrade."));
   };
 
   return (
@@ -159,16 +233,21 @@ function CustomerMemberships() {
       {/* Title Bar */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">Customer Memberships</h1>
+          <h1 className="text-xl font-semibold text-text-primary">Customer Subscriptions & Packages</h1>
           <p className="text-xs text-text-secondary">Assign membership packages, manage benefit balances, renewals, and upgrades.</p>
         </div>
         <button
           onClick={() => {
             setAssignForm({
-              customer_id: selectedCustomer ? selectedCustomer.id : "",
-              plan_id: plans.length > 0 ? plans[0].id : "",
+              customer_id: selectedCustomer ? selectedCustomer.id.toString() : "",
+              plan_id: plans.length > 0 ? plans[0].id.toString() : "",
               benefits: [],
             });
+            if (selectedCustomer) {
+              setComboboxSearch(`${selectedCustomer.first_name} ${selectedCustomer.last_name || ""} (${selectedCustomer.phone || "No Phone"})`);
+            } else {
+              setComboboxSearch("");
+            }
             setShowAssignModal(true);
           }}
           className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition"
@@ -203,7 +282,7 @@ function CustomerMemberships() {
               placeholder="Type customer name or phone number..."
               value={customerSearch}
               onChange={(e) => setCustomerSearch(e.target.value)}
-              className="w-full bg-background border border-border-soft px-4 py-2 rounded-lg text-sm focus:outline-none"
+              className="w-full bg-background border border-border-soft px-4 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
             />
             {customers.length > 0 && (
               <div className="absolute left-4 right-4 top-16 bg-surface border border-border-soft rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto divide-y divide-border-soft">
@@ -225,7 +304,7 @@ function CustomerMemberships() {
         )}
       </div>
 
-      {/* Active Memberships Content */}
+      {/* Active Customer Memberships Content */}
       {selectedCustomer && (
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-text-primary">Active & Past Packages for {selectedCustomer.first_name}</h3>
@@ -240,10 +319,11 @@ function CustomerMemberships() {
               <button
                 onClick={() => {
                   setAssignForm({
-                    customer_id: selectedCustomer.id,
-                    plan_id: plans.length > 0 ? plans[0].id : "",
+                    customer_id: selectedCustomer.id.toString(),
+                    plan_id: plans.length > 0 ? plans[0].id.toString() : "",
                     benefits: [],
                   });
+                  setComboboxSearch(`${selectedCustomer.first_name} ${selectedCustomer.last_name || ""} (${selectedCustomer.phone || "No Phone"})`);
                   setShowAssignModal(true);
                 }}
                 className="text-sm text-primary font-medium hover:underline"
@@ -295,12 +375,12 @@ function CustomerMemberships() {
                 {/* Benefits List */}
                 <div>
                   <h5 className="text-xs font-semibold text-text-secondary uppercase mb-3">Service Benefits Balance</h5>
-                  {m.benefits.length === 0 ? (
+                  {(!m.benefits || m.benefits.length === 0) ? (
                     <p className="text-xs text-text-secondary">No free service perks attached to this plan.</p>
                   ) : (
                     <div className="grid grid-cols-3 gap-3">
-                      {m.benefits.map((b) => (
-                        <div key={b.id} className="bg-background border border-border-soft p-3 rounded-lg flex justify-between items-center">
+                      {(m.benefits || []).map((b) => (
+                        <div key={b.id || b.service_id} className="bg-background border border-border-soft p-3 rounded-lg flex justify-between items-center">
                           <span className="text-xs font-medium text-text-primary">{b.service_name}</span>
                           <span className="text-xs font-semibold text-primary">
                             {b.remaining_quantity} / {b.total_quantity} Left
@@ -316,47 +396,185 @@ function CustomerMemberships() {
         </div>
       )}
 
+      {/* Datatable Listing of All Customer Memberships */}
+      <div className="bg-surface border border-border-soft rounded-lg overflow-hidden shadow-sm">
+        <div className="px-6 py-4 border-b border-border-soft bg-slate-50/50">
+          <h3 className="text-sm font-semibold text-text-primary">All Assigned Customer Memberships</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-primary-light border-b border-border-soft">
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Customer</th>
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Mobile</th>
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Membership Plan</th>
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Status</th>
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Expiry Date</th>
+                <th className="px-6 py-3 text-xs font-semibold text-text-secondary uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-soft">
+              {allMemberships.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="px-6 py-8 text-center text-xs text-text-secondary">
+                    No assigned memberships found.
+                  </td>
+                </tr>
+              ) : (
+                allMemberships.map((m) => (
+                  <tr key={m.id} className="hover:bg-background/50 transition">
+                    <td className="px-6 py-4 text-xs font-bold text-text-primary">
+                      {m.customer_name}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-text-secondary">
+                      {m.customer_phone || "N/A"}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-text-secondary font-semibold">
+                      {m.plan_name}
+                    </td>
+                    <td className="px-6 py-4 text-xs">
+                      <span className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
+                        m.status === "active" ? "bg-success/15 text-success" : "bg-danger/15 text-danger"
+                      }`}>
+                        {m.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-text-secondary">
+                      {new Date(m.expires_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 text-xs space-x-3">
+                      <button
+                        onClick={() => {
+                          const mockCust = {
+                            id: m.customer_id,
+                            first_name: m.customer_name.split(" ")[0],
+                            last_name: m.customer_name.split(" ").slice(1).join(" "),
+                            phone: m.customer_phone
+                          };
+                          fetchCustomerMemberships(mockCust);
+                        }}
+                        className="text-primary hover:underline font-semibold"
+                      >
+                        View
+                      </button>
+                      {m.status === "active" && (
+                        <>
+                          <button
+                            onClick={() => handleRenew(m.id)}
+                            className="text-text-primary hover:underline font-semibold"
+                          >
+                            Renew
+                          </button>
+                          <button
+                            onClick={() => handleCancel(m.id)}
+                            className="text-danger hover:underline font-semibold"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Assign Membership Modal */}
       {showAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
           <div ref={assignModalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Assign Customer Membership</h3>
-              <button onClick={() => setShowAssignModal(false)} className="text-text-secondary hover:text-text-primary">
-                ✖
+              <button onClick={() => setShowAssignModal(false)} className="text-text-secondary hover:text-text-primary p-1">
+                <X className="w-5 h-5" />
               </button>
             </div>
             <form ref={assignFormRef} onSubmit={handleAssignSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Search & Select Customer *</label>
-                <input
-                  type="text"
-                  placeholder="Filter dropdown by customer name or phone..."
-                  value={modalCustomerSearch}
-                  onChange={(e) => setModalCustomerSearch(e.target.value)}
-                  className="w-full bg-background border border-border-soft px-3 py-1.5 rounded-lg text-xs mb-2 focus:outline-none focus:border-primary"
-                />
-                <select
-                  required
-                  value={assignForm.customer_id}
-                  onChange={(e) => setAssignForm({ ...assignForm, customer_id: e.target.value })}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
-                >
-                  <option value="">-- Choose Active Customer --</option>
-                  {allCustomers
-                    .filter(
-                      (c) =>
-                        !modalCustomerSearch ||
-                        `${c.first_name} ${c.last_name || ""} ${c.phone}`
+              {/* Single Searchable Combobox Dropdown */}
+              <div className="relative" ref={comboboxRef}>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">Customer *</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Search customer by Name or Mobile..."
+                    value={comboboxSearch}
+                    onFocus={() => setShowComboboxDropdown(true)}
+                    onChange={(e) => {
+                      setComboboxSearch(e.target.value);
+                      setShowComboboxDropdown(true);
+                      if (assignForm.customer_id) {
+                        setAssignForm({ ...assignForm, customer_id: "" });
+                      }
+                    }}
+                    className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
+                  />
+                  {assignForm.customer_id ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignForm({ ...assignForm, customer_id: "" });
+                        setComboboxSearch("");
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-danger font-semibold hover:underline"
+                    >
+                      Clear
+                    </button>
+                  ) : (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none">
+                      <ChevronDown className="w-4 h-4" />
+                    </span>
+                  )}
+                </div>
+
+                {showComboboxDropdown && (
+                  <div className="absolute left-0 right-0 mt-1 bg-surface border border-border-soft rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto divide-y divide-border-soft">
+                    {allCustomers
+                      .filter((c) => {
+                        const term = comboboxSearch.toLowerCase();
+                        return (
+                          !term ||
+                          `${c.first_name} ${c.last_name || ""} ${c.phone || ""}`
+                            .toLowerCase()
+                            .includes(term)
+                        );
+                      })
+                      .map((c) => {
+                        const isSelected = assignForm.customer_id === c.id.toString();
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              setAssignForm({ ...assignForm, customer_id: c.id.toString() });
+                              setComboboxSearch(`${c.first_name} ${c.last_name || ""} (${c.phone || "No Phone"})`);
+                              setShowComboboxDropdown(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs hover:bg-background transition flex justify-between items-center ${
+                              isSelected ? "bg-primary-light text-primary font-semibold" : ""
+                            }`}
+                          >
+                            <span>{c.first_name} {c.last_name || ""} ({c.phone || "No Phone"})</span>
+                            {isSelected && <Check className="w-3.5 h-3.5" />}
+                          </button>
+                        );
+                      })}
+                    {allCustomers.filter((c) => {
+                      const term = comboboxSearch.toLowerCase();
+                      return (
+                        !term ||
+                        `${c.first_name} ${c.last_name || ""} ${c.phone || ""}`
                           .toLowerCase()
-                          .includes(modalCustomerSearch.toLowerCase())
-                    )
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.first_name} {c.last_name || ""} ({c.phone || "No Phone"})
-                      </option>
-                    ))}
-                </select>
+                          .includes(term)
+                      );
+                    }).length === 0 && (
+                      <div className="px-3 py-2.5 text-xs text-text-secondary">No customers found.</div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -365,8 +583,9 @@ function CustomerMemberships() {
                   required
                   value={assignForm.plan_id}
                   onChange={(e) => setAssignForm({ ...assignForm, plan_id: e.target.value })}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
                 >
+                  <option value="">[ Select Membership Plan ]</option>
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name} - {formatCurrency(p.price)} ({p.duration_days} Days)
@@ -387,12 +606,12 @@ function CustomerMemberships() {
                     + Add Free Service
                   </button>
                 </div>
-                {assignForm.benefits.map((row, idx) => (
+                {(assignForm.benefits || []).map((row, idx) => (
                   <div key={idx} className="flex space-x-2 items-center">
                     <select
                       value={row.service_id}
                       onChange={(e) => handleBenefitChange(idx, "service_id", e.target.value, false)}
-                      className="flex-1 bg-background border border-border-soft px-2 py-1.5 rounded text-xs"
+                      className="flex-1 bg-background border border-border-soft px-2 py-1.5 rounded text-xs focus:outline-none"
                     >
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
@@ -404,13 +623,13 @@ function CustomerMemberships() {
                       placeholder="Qty"
                       value={row.quantity}
                       onChange={(e) => handleBenefitChange(idx, "quantity", e.target.value, false)}
-                      className="w-20 bg-background border border-border-soft px-2 py-1.5 rounded text-xs"
+                      className="w-20 bg-background border border-border-soft px-2 py-1.5 rounded text-xs focus:outline-none"
                     />
                   </div>
                 ))}
               </div>
 
-              <div className="pt-2 border-t border-border-soft flex justify-end space-x-3">
+              <div className="pt-4 border-t border-border-soft flex justify-end space-x-3">
                 <button
                   type="button"
                   onClick={() => setShowAssignModal(false)}
@@ -421,7 +640,7 @@ function CustomerMemberships() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-semibold shadow-xs disabled:opacity-50"
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-semibold disabled:opacity-50"
                 >
                   {submitting ? "Assigning..." : "Assign Plan"}
                 </button>
@@ -434,7 +653,7 @@ function CustomerMemberships() {
       {/* Upgrade Membership Modal */}
       {showUpgradeModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
+          <div ref={upgradeModalRef} className="bg-surface max-w-lg w-full rounded-lg shadow-lg border border-border-soft overflow-hidden">
             <div className="px-6 py-4 border-b border-border-soft flex justify-between items-center">
               <h3 className="text-md font-semibold text-text-primary">Upgrade Membership Tier</h3>
               <button onClick={() => setShowUpgradeModal(false)} className="text-text-secondary hover:text-text-primary p-1">
@@ -443,12 +662,12 @@ function CustomerMemberships() {
             </div>
             <form onSubmit={handleUpgradeSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-text-secondary mb-1">Target Plan Tier *</label>
+                <label className="block text-xs font-semibold text-text-secondary mb-1">Select New Target Plan *</label>
                 <select
                   required
                   value={upgradePlanId}
                   onChange={(e) => setUpgradePlanId(e.target.value)}
-                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none"
+                  className="w-full bg-background border border-border-soft px-3 py-2 rounded-lg text-sm focus:outline-none focus:border-primary"
                 >
                   {plans.map((p) => (
                     <option key={p.id} value={p.id}>
@@ -458,15 +677,16 @@ function CustomerMemberships() {
                 </select>
               </div>
 
+              {/* Upgrade Perks entry */}
               <div className="space-y-2 border-t border-border-soft pt-3">
                 <div className="flex justify-between items-center">
-                  <label className="text-xs font-semibold text-text-secondary">Free Service Perks for New Tier</label>
+                  <label className="text-xs font-semibold text-text-secondary font-semibold">New Plan Service Perks</label>
                   <button
                     type="button"
                     onClick={() => handleAddBenefitRow(true)}
                     className="text-xs text-primary font-medium hover:underline"
                   >
-                    + Add Free Service
+                    + Add Perk
                   </button>
                 </div>
                 {upgradeBenefits.map((row, idx) => (
@@ -474,7 +694,7 @@ function CustomerMemberships() {
                     <select
                       value={row.service_id}
                       onChange={(e) => handleBenefitChange(idx, "service_id", e.target.value, true)}
-                      className="flex-1 bg-background border border-border-soft px-2 py-1.5 rounded text-xs"
+                      className="flex-1 bg-background border border-border-soft px-2 py-1.5 rounded text-xs focus:outline-none"
                     >
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>{s.name}</option>
@@ -486,7 +706,7 @@ function CustomerMemberships() {
                       placeholder="Qty"
                       value={row.quantity}
                       onChange={(e) => handleBenefitChange(idx, "quantity", e.target.value, true)}
-                      className="w-20 bg-background border border-border-soft px-2 py-1.5 rounded text-xs"
+                      className="w-20 bg-background border border-border-soft px-2 py-1.5 rounded text-xs focus:outline-none"
                     />
                   </div>
                 ))}
@@ -496,15 +716,15 @@ function CustomerMemberships() {
                 <button
                   type="button"
                   onClick={() => setShowUpgradeModal(false)}
-                  className="px-4 py-2 border border-border-soft rounded-lg text-sm text-text-secondary hover:bg-background"
+                  className="px-4 py-2 border border-border-soft rounded-md text-xs font-semibold text-text-secondary hover:bg-background"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium"
+                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-md text-xs font-semibold"
                 >
-                  Confirm Upgrade
+                  Upgrade Membership
                 </button>
               </div>
             </form>

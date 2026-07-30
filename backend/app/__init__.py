@@ -68,6 +68,8 @@ def create_app(config_class=Config):
     from app.routes.settings import settings_bp
     from app.routes.super_admin import super_admin_bp
     from app.routes.notifications import notifications_bp
+    from app.routes.whatsapp import whatsapp_bp
+    from app.routes.campaigns import campaigns_bp
     app.register_blueprint(health_bp, url_prefix="/api/v1")
     app.register_blueprint(auth_bp, url_prefix="/api/v1")
     app.register_blueprint(customers_bp, url_prefix="/api/v1")
@@ -81,6 +83,8 @@ def create_app(config_class=Config):
     app.register_blueprint(settings_bp, url_prefix="/api/v1")
     app.register_blueprint(super_admin_bp, url_prefix="/api/v1")
     app.register_blueprint(notifications_bp, url_prefix="/api/v1")
+    app.register_blueprint(whatsapp_bp, url_prefix="/api/v1")
+    app.register_blueprint(campaigns_bp, url_prefix="/api/v1")
 
     from flask import send_from_directory
     import os

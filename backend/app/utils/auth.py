@@ -59,6 +59,16 @@ def require_role(roles):
             g.parlour_id = parlour_id
             g.role = role
 
+            if parlour_id:
+                from app.models.global_models import Tenant
+                tenant_exists = Tenant.query.filter_by(id=parlour_id).first()
+                if not tenant_exists:
+                    return error_response(
+                        error_code="INVALID_TENANT",
+                        message="The associated parlour tenant does not exist or has been deleted. Please log out and register/login again.",
+                        status_code=400
+                    )
+
             return fn(*args, **kwargs)
         return wrapper
     return decorator

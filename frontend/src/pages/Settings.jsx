@@ -27,7 +27,9 @@ import {
   Eye,
   QrCode,
   Palette,
+  MessageSquare,
 } from "lucide-react";
+import WhatsAppIntegration from "./WhatsAppIntegration";
 
 function Settings() {
   const formRef = useRef(null);
@@ -409,6 +411,7 @@ function Settings() {
         <div className="col-span-3 space-y-1 bg-surface border border-border-soft p-3 rounded-lg h-fit">
           {[
             { id: "business", label: "Parlour Profile", icon: Building2 },
+            { id: "whatsapp", label: "WhatsApp Integration", icon: MessageSquare },
             { id: "theme", label: "System Theme Color", icon: Palette },
             { id: "receipt", label: "Receipt & Thermal Printing", icon: Printer },
             { id: "invoice", label: "Invoice & Taxes", icon: Receipt },
@@ -436,6 +439,10 @@ function Settings() {
 
         {/* Settings Form Panel */}
         <div ref={formRef} className="col-span-9 bg-surface border border-border-soft p-8 rounded-lg space-y-6">
+          {/* WhatsApp Integration Tab */}
+          {activeTab === "whatsapp" && (
+            <WhatsAppIntegration />
+          )}
           {/* Theme Customization Tab */}
           {activeTab === "theme" && (
             <div className="space-y-6">
