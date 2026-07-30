@@ -2,6 +2,7 @@ from flask import Blueprint, request, g
 import json
 from app.database import db
 from app.models.membership import MembershipPlan, CustomerMembership, MembershipBenefit, MembershipPlanService
+from app.models.global_models import Tenant
 from app.models.catalog import Service
 from app.models.customer import Customer
 from app.utils.responses import success_response, error_response
@@ -100,6 +101,21 @@ def get_plan(plan_id):
 @memberships_bp.route("/membership-plans", methods=["POST"])
 @require_role(["ParlourAdmin"])
 def create_plan():
+    # Ensure tenant context is available
+    if not getattr(g, 'parlour_id', None):
+        return error_response(
+            error_code="TENANT_CONTEXT_MISSING",
+            message="Parlour tenant context is missing. Please login again.",
+            status_code=400
+        )
+    # Verify tenant exists
+    tenant = Tenant.query.filter_by(id=g.parlour_id, is_deleted=False).first()
+    if not tenant:
+        return error_response(
+            error_code="TENANT_NOT_FOUND",
+            message="The selected parlour tenant does not exist.",
+            status_code=400
+        )
     data = request.get_json() or {}
     name = data.get("name", "").strip()
     price = data.get("price", 0.00)
@@ -185,6 +201,21 @@ def update_plan(plan_id):
             status_code=404
         )
 
+    # Ensure tenant context is available
+    if not getattr(g, 'parlour_id', None):
+        return error_response(
+            error_code="TENANT_CONTEXT_MISSING",
+            message="Parlour tenant context is missing. Please login again.",
+            status_code=400
+        )
+    # Verify tenant exists
+    tenant = Tenant.query.filter_by(id=g.parlour_id, is_deleted=False).first()
+    if not tenant:
+        return error_response(
+            error_code="TENANT_NOT_FOUND",
+            message="The selected parlour tenant does not exist.",
+            status_code=400
+        )
     data = request.get_json() or {}
     name = data.get("name", "").strip()
     price = data.get("price", 0.00)

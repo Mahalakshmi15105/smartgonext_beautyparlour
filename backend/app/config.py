@@ -17,3 +17,7 @@ class Config:
     
     # CORS
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+
+    # Meta Developer Portal Credentials
+    META_APP_ID = os.getenv("META_APP_ID", "YOUR_META_APP_ID")
+    META_APP_SECRET = os.getenv("META_APP_SECRET", "YOUR_META_APP_SECRET")

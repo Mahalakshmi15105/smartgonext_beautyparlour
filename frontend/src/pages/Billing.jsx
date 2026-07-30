@@ -1097,7 +1097,7 @@ function Billing() {
                       <button
                         type="button"
                         onClick={() => {
-                          setSelectedCustomerId("walkin");
+                          handleCustomerChange("walkin");
                           setCustomerSearchQuery("Walk-in Customer");
                           setIsCustomerDropdownOpen(false);
                           setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 50);
@@ -1125,8 +1125,7 @@ function Billing() {
                             key={c.id}
                             type="button"
                             onClick={() => {
-                              setSelectedCustomerId(String(c.id));
-                              setSelectedGender(c.gender || "Female");
+                              handleCustomerChange(String(c.id));
                               setCustomerSearchQuery(`${c.first_name} ${c.last_name || ""} (${c.phone || "No Phone"})`);
                               setIsCustomerDropdownOpen(false);
                               setTimeout(() => advanceToNextRef(customerSelectRef.current, genderSelectRef), 50);
