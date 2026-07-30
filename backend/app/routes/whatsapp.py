@@ -1,3 +1,4 @@
+import os
 import logging
 from datetime import datetime, timezone
 from flask import Blueprint, request, jsonify, g, current_app
@@ -17,9 +18,12 @@ whatsapp_bp = Blueprint("whatsapp", __name__)
 def get_whatsapp_settings():
     """Returns Meta WhatsApp Business account connection details for the logged-in parlour tenant."""
     setting = get_tenant_query(WhatsAppSetting).filter_by(tenant_id=g.parlour_id).first()
-    meta_app_id = current_app.config.get("META_APP_ID", "YOUR_META_APP_ID")
+    meta_app_id = current_app.config.get("META_APP_ID") or os.getenv("META_APP_ID", "")
+    config_id = current_app.config.get("META_CONFIG_ID") or os.getenv("META_CONFIG_ID", "")
+    graph_version = current_app.config.get("META_GRAPH_API_VERSION") or os.getenv("META_GRAPH_API_VERSION", "v21.0")
+    redirect_uri = current_app.config.get("META_REDIRECT_URI") or os.getenv("META_REDIRECT_URI", "")
+
     if not setting:
-        # Return default DISCONNECTED status
         return success_response({
             "status": "DISCONNECTED",
             "business_name": "",
@@ -28,11 +32,17 @@ def get_whatsapp_settings():
             "meta_waba_id": "",
             "connected_at": None,
             "last_synced_at": None,
-            "meta_app_id": meta_app_id
+            "meta_app_id": meta_app_id,
+            "meta_config_id": config_id,
+            "meta_graph_api_version": graph_version,
+            "meta_redirect_uri": redirect_uri
         })
 
     res_dict = setting.to_dict()
     res_dict["meta_app_id"] = meta_app_id
+    res_dict["meta_config_id"] = config_id
+    res_dict["meta_graph_api_version"] = graph_version
+    res_dict["meta_redirect_uri"] = redirect_uri
     return success_response(res_dict)
 
 

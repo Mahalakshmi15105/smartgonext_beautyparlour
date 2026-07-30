@@ -60,10 +60,21 @@ export default function WhatsAppIntegration() {
     const height = 650;
     const left = window.screen.width / 2 - width / 2;
     const top = window.screen.height / 2 - height / 2;
-    const appId = settings.meta_app_id || "YOUR_META_APP_ID";
-    const redirectUri = encodeURIComponent(window.location.origin + "/");
+    const appId = settings.meta_app_id;
+    if (!appId) {
+      setNotice({
+        type: "error",
+        message: "META_APP_ID is not configured in backend environment (.env).",
+      });
+      setConnecting(false);
+      return;
+    }
 
-    const oauthUrl = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=whatsapp_business_management,whatsapp_business_messaging&response_type=code&state=whatsapp_signup`;
+    const redirectUri = encodeURIComponent(settings.meta_redirect_uri || (window.location.origin + "/whatsapp-integration"));
+    const version = settings.meta_graph_api_version || "v21.0";
+    const configId = settings.meta_config_id ? `&config_id=${settings.meta_config_id}` : "";
+
+    const oauthUrl = `https://www.facebook.com/${version}/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=whatsapp_business_management,whatsapp_business_messaging${configId}&response_type=code&state=whatsapp_signup`;
 
     const popup = window.open(
       oauthUrl,
@@ -222,7 +233,7 @@ export default function WhatsAppIntegration() {
                   Business Name
                 </p>
                 <p className="text-sm font-black text-slate-900 truncate">
-                  {settings.business_name || "Salon Business"}
+                  {settings.business_name}
                 </p>
               </div>
 
@@ -231,7 +242,7 @@ export default function WhatsAppIntegration() {
                   Connected Phone Number
                 </p>
                 <p className="text-sm font-black text-slate-900 truncate">
-                  {settings.phone_number || "Not Configured"}
+                  {settings.phone_number}
                 </p>
               </div>
 
@@ -240,7 +251,7 @@ export default function WhatsAppIntegration() {
                   Phone Number ID
                 </p>
                 <p className="text-xs font-mono font-bold text-slate-700 truncate">
-                  {settings.meta_phone_number_id || "PHONE_ID_112233"}
+                  {settings.meta_phone_number_id}
                 </p>
               </div>
 
@@ -249,7 +260,7 @@ export default function WhatsAppIntegration() {
                   WABA ID (WhatsApp Account)
                 </p>
                 <p className="text-xs font-mono font-bold text-slate-700 truncate">
-                  {settings.meta_waba_id || "WABA_9988776655"}
+                  {settings.meta_waba_id}
                 </p>
               </div>
             </div>

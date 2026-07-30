@@ -19,5 +19,11 @@ class Config:
     CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 
     # Meta Developer Portal Credentials
-    META_APP_ID = os.getenv("META_APP_ID", "YOUR_META_APP_ID")
-    META_APP_SECRET = os.getenv("META_APP_SECRET", "YOUR_META_APP_SECRET")
+    META_APP_ID = os.getenv("META_APP_ID", "")
+    META_APP_SECRET = os.getenv("META_APP_SECRET", "")
+    META_REDIRECT_URI = os.getenv("META_REDIRECT_URI", "http://localhost:5173/whatsapp-integration")
+    META_CONFIG_ID = os.getenv("META_CONFIG_ID", "")
+    META_GRAPH_API_VERSION = os.getenv("META_GRAPH_API_VERSION", "v21.0")
+    WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "")
+    WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    WHATSAPP_PERMANENT_ACCESS_TOKEN = os.getenv("WHATSAPP_PERMANENT_ACCESS_TOKEN", "")
