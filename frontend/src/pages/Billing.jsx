@@ -2993,7 +2993,29 @@ function Billing() {
       )}
 
       {/* PERSISTENT OFF-SCREEN THERMAL RECEIPT MOUNT FOR 100% RELIABLE PRINTING */}
-      <div style={{ position: "absolute", left: "-9999px", top: "0", opacity: "0", pointerEvents: "none" }}>
+      <div className="printable-receipt-wrapper">
+        <style>{`
+          @media screen {
+            .printable-receipt-wrapper {
+              position: fixed;
+              left: -9999px;
+              top: 0;
+              opacity: 0;
+              pointer-events: none;
+              z-index: -9999;
+            }
+          }
+          @media print {
+            .printable-receipt-wrapper {
+              position: static !important;
+              left: auto !important;
+              top: auto !important;
+              opacity: 1 !important;
+              z-index: 9999 !important;
+              display: block !important;
+            }
+          }
+        `}</style>
         <ThermalReceipt
           ref={printReceiptRef}
           invoice={activePrintInvoice || invoiceResult || selectedInvoiceDetail}

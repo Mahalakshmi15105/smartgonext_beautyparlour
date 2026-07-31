@@ -104,9 +104,11 @@ export function printThermalReceiptElement(elementOrRef, paperSize = "80mm") {
       html, body {
         margin: 0 !important;
         padding: 0 !important;
-        width: ${contentWidth} !important;
-        max-width: ${contentWidth} !important;
-        overflow: hidden !important;
+        width: 100% !important;
+        min-height: 100% !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: flex-start !important;
         background: #ffffff !important;
         color: #000000 !important;
         font-family: 'Courier New', Courier, monospace, sans-serif !important;
@@ -120,7 +122,7 @@ export function printThermalReceiptElement(elementOrRef, paperSize = "80mm") {
         max-width: ${contentWidth} !important;
         min-width: ${contentWidth} !important;
         margin: 0 auto !important;
-        padding: 0 !important;
+        padding: 6px 4px !important;
         box-sizing: border-box !important;
         background: #ffffff !important;
         color: #000000 !important;
@@ -306,6 +308,10 @@ export const ThermalReceipt = React.forwardRef(({ invoice, settings = {}, busine
           margin: 0mm !important;
         }
         @media print {
+          @page {
+            size: ${is58mm ? "58mm" : "80mm"} auto;
+            margin: 0mm !important;
+          }
           html, body {
             margin: 0 !important;
             padding: 0 !important;
@@ -316,7 +322,8 @@ export const ThermalReceipt = React.forwardRef(({ invoice, settings = {}, busine
             print-color-adjust: exact !important;
             overflow: visible !important;
           }
-          body > *:not(#thermal-receipt-printable) {
+          /* Hide screen UI elements during browser print */
+          header, nav, footer, aside, button, .no-print {
             display: none !important;
           }
           #thermal-receipt-printable,
@@ -326,10 +333,11 @@ export const ThermalReceipt = React.forwardRef(({ invoice, settings = {}, busine
           }
           #thermal-receipt-printable {
             display: block !important;
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            margin: 0 !important;
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
+            opacity: 1 !important;
+            margin: 0 auto !important;
             padding: ${is58mm ? "4px 2px" : "6px 4px"} !important;
             width: ${is58mm ? "219px" : "302px"} !important;
             max-width: ${is58mm ? "219px" : "302px"} !important;
